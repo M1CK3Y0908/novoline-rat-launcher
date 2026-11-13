@@ -338,38 +338,31 @@ static void create_controls(HWND hwnd) {
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, 0);
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS, inst, 0);
     g_logoutBtn = CreateWindowExW(0, L"BUTTON", L"Log out",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LOGOUT, inst, 0);
     g_launchBtn = CreateWindowExW(0, L"BUTTON", L"Launch",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LAUNCH, inst, 0);
     g_openBtn = CreateWindowExW(0, L"BUTTON", L"Open",
-                                WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OPEN, inst, 0);
     g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Detect",
-                                  WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                  WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_DETECT, inst, 0);
     g_memMinusBtn = CreateWindowExW(0, L"BUTTON", L"-",
-                                    WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                    WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_MINUS, inst, 0);
     g_memPlusBtn = CreateWindowExW(0, L"BUTTON", L"+",
-                                   WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_FLAT,
+                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_PLUS, inst, 0);
     if (g_list) {
         for (i = 0; i < 4; i++) SendMessageW(g_list, LB_ADDSTRING, 0, (LPARAM)g_items[i]);
         SendMessageW(g_list, LB_SETCURSEL, 0, 0);
     }
     if (g_list) set_control_theme(g_list);
-    if (g_settingsBtn) set_control_theme(g_settingsBtn);
-    if (g_logoutBtn) set_control_theme(g_logoutBtn);
-    if (g_launchBtn) set_control_theme(g_launchBtn);
-    if (g_openBtn) set_control_theme(g_openBtn);
-    if (g_detectBtn) set_control_theme(g_detectBtn);
-    if (g_memMinusBtn) set_control_theme(g_memMinusBtn);
-    if (g_memPlusBtn) set_control_theme(g_memPlusBtn);
 }
 
 static void apply_control_fonts(void) {
@@ -802,6 +795,35 @@ static void set_window_icon(void) {
     ReleaseDC(0, screen);
 }
 
+static void draw_owner_button(const DRAWITEMSTRUCT *d) {
+    WCHAR label[128];
+    COLORREF fill = RGB_BUTTON;
+    COLORREF text = RGB(210, 212, 218);
+    HBRUSH brush;
+    RECT r;
+    HGDIOBJ oldFont;
+    if (!d) return;
+    if (d->itemState & ODS_DISABLED) {
+        fill = RGB(43, 47, 56);
+        text = RGB(124, 128, 136);
+    } else if (d->itemState & ODS_SELECTED) {
+        fill = RGB_BUTTON_P;
+    } else if (d->CtlID == IDC_SETTINGS && g_page == 1) {
+        fill = RGB(56, 61, 73);
+    }
+    brush = CreateSolidBrush(fill);
+    FillRect(d->hDC, &d->rcItem, brush);
+    DeleteObject(brush);
+    label[0] = 0;
+    GetWindowTextW(d->hwndItem, label, 128);
+    r = d->rcItem;
+    SetBkMode(d->hDC, TRANSPARENT);
+    SetTextColor(d->hDC, text);
+    oldFont = SelectObject(d->hDC, g_font20);
+    DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(d->hDC, oldFont);
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:
@@ -842,6 +864,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             mmi->ptMinTrackSize.y = r.bottom - r.top;
             return 0;
         }
+        case WM_DRAWITEM:
+            if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_BUTTON) {
+                draw_owner_button((const DRAWITEMSTRUCT *)lp);
+                return TRUE;
+            }
+            break;
         case WM_COMMAND: {
             int id = LOWORD(wp);
             int code = HIWORD(wp);

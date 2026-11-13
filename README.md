@@ -76,7 +76,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - 窗口客户区以 960 × 620（96 DPI / Windows 100% 缩放）为基准；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
-- 原生 `LISTBOX` / `BUTTON` 的字体、颜色和焦点行为由 Win32 控件处理；按钮和列表的边框会跟随 Windows 主题。
+- 按钮仍为原生 `BUTTON` 控件；通过 `WM_DRAWITEM` 绘制纯色背景，去掉系统主题的白色描边。列表仍由原生 `LISTBOX` 绘制。
 - 窗口标题和标题栏图标由 Win32 原生绘制。
 - 当前版本采用离线档案启动；没有实现 Microsoft 账号登录。首次启动默认用户名为 `Player`。
 - 对现代 Forge / NeoForge 等需要额外 JVM 参数的整合包，启动参数适配可能不完整；原版 / Novoline 风格版本可直接使用。
