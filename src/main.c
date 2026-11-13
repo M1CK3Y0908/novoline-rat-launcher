@@ -32,8 +32,8 @@
 #define IDC_DETECT     1006
 #define IDC_MEM_MINUS  1007
 #define IDC_MEM_PLUS   1008
-#define DESIGN_W 960.0f
-#define DESIGN_H 620.0f
+#define DESIGN_W 584.0f
+#define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
 
 #define RGB_BG        RGB(33, 36, 41)
@@ -265,45 +265,45 @@ static Layout make_layout(void) {
     ZeroMemory(&l, sizeof(l));
     l.W = W;
     l.H = H;
-    l.mainX = 276.0f;
-    l.mainW = W - l.mainX - 16.0f;
+    l.mainX = 214.0f;
+    l.mainW = W - l.mainX - 8.0f;
     if (l.mainW < 80) l.mainW = 80;
     for (i = 0; i < 4; i++) {
-        l.items[i].x = 10.0f;
-        l.items[i].y = 12.0f + i * 22.0f;
-        l.items[i].w = 240.0f;
+        l.items[i].x = 8.0f;
+        l.items[i].y = 8.0f + i * 22.0f;
+        l.items[i].w = 184.0f;
         l.items[i].h = 22.0f;
     }
-    l.settingsBtn.x = 10.0f;
+    l.settingsBtn.x = 8.0f;
     l.settingsBtn.y = H - 66.0f;
-    l.settingsBtn.w = 240.0f;
+    l.settingsBtn.w = 184.0f;
     l.settingsBtn.h = 24.0f;
-    l.logoutBtn.x = 10.0f;
+    l.logoutBtn.x = 8.0f;
     l.logoutBtn.y = H - 36.0f;
-    l.logoutBtn.w = 240.0f;
+    l.logoutBtn.w = 184.0f;
     l.logoutBtn.h = 24.0f;
-    l.launchBtn.x = 276.0f;
+    l.launchBtn.x = 214.0f;
     l.launchBtn.y = H - 36.0f;
-    l.launchBtn.w = W - 276.0f - 16.0f;
+    l.launchBtn.w = W - 214.0f - 8.0f;
     l.launchBtn.h = 24.0f;
-    l.card.x = 276.0f;
-    l.card.y = 70.0f;
+    l.card.x = 214.0f;
+    l.card.y = 58.0f;
     l.card.w = l.mainW;
-    l.card.h = 246.0f;
+    l.card.h = 210.0f;
     l.openBtn.x = l.card.x + l.card.w - 72.0f;
-    l.openBtn.y = 88.0f;
+    l.openBtn.y = 76.0f;
     l.openBtn.w = 60.0f;
     l.openBtn.h = 24.0f;
     l.detectBtn.x = l.card.x + l.card.w - 72.0f;
-    l.detectBtn.y = 146.0f;
+    l.detectBtn.y = 124.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
     l.memMinus.x = l.card.x + l.card.w - 60.0f;
-    l.memMinus.y = 204.0f;
+    l.memMinus.y = 172.0f;
     l.memMinus.w = 26.0f;
     l.memMinus.h = 24.0f;
     l.memPlus.x = l.card.x + l.card.w - 30.0f;
-    l.memPlus.y = 204.0f;
+    l.memPlus.y = 172.0f;
     l.memPlus.w = 26.0f;
     l.memPlus.h = 24.0f;
     return l;
@@ -477,7 +477,7 @@ static void sync_page_controls(void) {
 /* ---------- painting ---------- */
 
 static void draw_sidebar(GpGraphics *g, const Layout *l) {
-    fill_rect(g, RGB_SEP, 260, 0, 1, l->H);
+    fill_rect(g, RGB_SEP, 200, 0, 1, l->H);
 }
 
 static void draw_release_shapes(GpGraphics *g, const Layout *l) {
@@ -493,8 +493,8 @@ static void draw_toast_shape(GpGraphics *g, const Layout *l) {
     float w = 420.0f;
     float x;
     if (!g_toast[0] || GetTickCount() >= g_toastUntil) return;
-    if (w > l->mainW - 20) w = l->mainW - 20;
-    x = (l->W - w) / 2;
+    if (w > l->mainW - 8) w = l->mainW - 8;
+    x = l->mainX + (l->mainW - w) / 2;
     panel(g, RGB(42, 46, 54), g_toastError ? RGB(100, 58, 58) : RGB(58, 62, 73),
           x, l->H - 76, w, 26, 6, 1);
 }
@@ -511,48 +511,48 @@ static void draw_texts(HDC dc, const Layout *l) {
     int i;
 
     if (g_page == 0) {
-        draw_text(dc, g_items[g_selected], l->mainX, 8, l->mainW, 28, g_font36, RGB_HEADLINE,
+        draw_text(dc, g_items[g_selected], l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        draw_text(dc, L"Released ... days ago", l->mainX, 40, l->mainW, 20, g_font24, RGB(158, 161, 168),
+        draw_text(dc, L"Released ... days ago", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         for (i = 0; i < 3; i++) {
-            float y = 60.0f + i * 22.0f;
-            draw_text(dc, L"[/]", l->mainX, y, 20, 20, g_font24, RGB(150, 153, 161),
+            float y = 50.0f + i * 18.0f;
+            draw_text(dc, L"[/]", l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
                       DT_LEFT | DT_TOP | DT_SINGLELINE);
-            draw_text(dc, g_notes[g_selected][i], l->mainX + 22, y, l->mainW - 22, 20, g_font24,
+            draw_text(dc, g_notes[g_selected][i], l->mainX + 20, y, l->mainW - 20, 18, g_font24,
                       RGB(187, 190, 196), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
     } else {
         WCHAR memText[64];
         WCHAR profile[96];
-        draw_text(dc, L"Settings", l->mainX, 8, l->mainW, 28, g_font36, RGB_HEADLINE,
+        draw_text(dc, L"Settings", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"Launcher configuration", l->mainX, 40, l->mainW, 20, g_font24, RGB(158, 161, 168),
+        draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"GAME DIRECTORY", l->card.x + 12, 84, l->card.w - 96, 14, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"GAME DIRECTORY", l->card.x + 8, 68, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 12, 102, l->card.w - 96, 20, g_font22, RGB(197, 199, 205),
+        draw_text(dc, g_settings.gameDir, l->card.x + 8, 84, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
-        draw_text(dc, L"JAVA RUNTIME", l->card.x + 12, 142, l->card.w - 96, 14, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"JAVA RUNTIME", l->card.x + 8, 116, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Auto-detect when launching",
-                  l->card.x + 12, 160, l->card.w - 96, 20, g_font22, RGB(197, 199, 205),
+                  l->card.x + 8, 132, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
-        draw_text(dc, L"MEMORY", l->card.x + 12, 200, l->card.w - 96, 14, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"MEMORY", l->card.x + 8, 164, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(memText, L"%d MB", g_settings.memoryMB);
-        draw_text(dc, memText, l->card.x + 12, 218, 200, 20, g_font22, RGB(197, 199, 205),
+        draw_text(dc, memText, l->card.x + 8, 180, 140, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
-        draw_text(dc, L"PROFILE", l->card.x + 12, 258, l->card.w - 96, 14, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"PROFILE", l->card.x + 8, 212, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(profile, L"%s  (offline)", g_settings.username);
-        draw_text(dc, profile, l->card.x + 12, 276, l->card.w - 24, 20, g_font22, RGB(197, 199, 205),
+        draw_text(dc, profile, l->card.x + 8, 228, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
-                  l->card.x + 12, 296, l->card.w - 24, 16, g_font16, RGB(126, 130, 138),
+                  l->card.x + 8, 248, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, L"Settings are saved automatically.", l->mainX, l->card.y + l->card.h + 8,
                   l->mainW, 16, g_font16, RGB(111, 115, 124), DT_LEFT | DT_SINGLELINE);
@@ -561,8 +561,8 @@ static void draw_texts(HDC dc, const Layout *l) {
     if (g_toast[0] && GetTickCount() < g_toastUntil) {
         float w = 420.0f;
         float x;
-        if (w > l->mainW - 20) w = l->mainW - 20;
-        x = (l->W - w) / 2;
+        if (w > l->mainW - 8) w = l->mainW - 8;
+        x = l->mainX + (l->mainW - w) / 2;
         draw_text(dc, g_toast, x + 18, l->H - 76, w - 24, 26, g_font20,
                   g_toastError ? RGB(232, 180, 180) : RGB(198, 200, 206),
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
@@ -896,8 +896,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             RECT r;
             r.left = 0;
             r.top = 0;
-            r.right = (LONG)(760 * g_scale);
-            r.bottom = (LONG)(520 * g_scale);
+            r.right = (LONG)(520 * g_scale);
+            r.bottom = (LONG)(360 * g_scale);
             AdjustWindowRectEx(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
             mmi->ptMinTrackSize.x = r.right - r.left;
             mmi->ptMinTrackSize.y = r.bottom - r.top;
