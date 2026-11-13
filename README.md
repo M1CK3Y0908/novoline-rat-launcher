@@ -22,7 +22,7 @@ dist\NovolineLauncher.exe
 ## 功能
 
 - 使用 **Win32 原生标题栏**：窗口标题、标题栏图标、最小化 / 最大化 / 关闭按钮全部由 Windows 系统绘制，不使用自绘标题栏元素。
-- 客户区保留参考图的深色布局：左侧版本列表、右侧发行说明、底部按钮和绿色 Launch 按钮。
+- 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用原生 `BUTTON` 控件（Settings / Log out / Launch / Open / Detect / - / + / Done），没有自绘按钮或列表。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
 - 左侧四个版本条目可切换，右侧内容随之更新。
@@ -75,7 +75,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - 客户区按参考图设计为 1237 × 779（96 DPI 基准），窗口总尺寸由原生标题栏和边框自动计算。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
-- 界面图标（设置、退出、播放、箭头）使用矢量绘制；窗口标题和标题栏图标由 Win32 原生绘制。
+- 原生 `LISTBOX` / `BUTTON` 的字体、颜色和焦点行为由 Win32 控件处理；按钮和列表的边框会跟随 Windows 主题。
+- 窗口标题和标题栏图标由 Win32 原生绘制。
 - 当前版本采用离线档案启动；没有实现 Microsoft 账号登录。首次启动默认用户名为 `Player`。
 - 对现代 Forge / NeoForge 等需要额外 JVM 参数的整合包，启动参数适配可能不完整；原版 / Novoline 风格版本可直接使用。
 
