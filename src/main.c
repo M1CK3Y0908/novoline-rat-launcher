@@ -477,7 +477,7 @@ static void sync_page_controls(void) {
 /* ---------- painting ---------- */
 
 static void draw_sidebar(GpGraphics *g, const Layout *l) {
-    fill_rect(g, RGB_SEP, 200, 0, 1, l->H);
+    fill_rect(g, RGB_SEP, 200, 10, 1, l->H - 20);
 }
 
 static void draw_release_shapes(GpGraphics *g, const Layout *l) {
