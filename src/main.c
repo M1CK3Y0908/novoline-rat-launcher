@@ -76,6 +76,7 @@ static HWND g_detectBtn;
 static HWND g_memMinusBtn;
 static HWND g_memPlusBtn;
 static HWND g_hoverButton;
+static int g_listHover = -1;
 static HBRUSH g_listBrush;
 static int g_dpi = 96;
 static float g_scale = 1.0f;
@@ -337,14 +338,29 @@ static int is_owner_button(HWND hwnd) {
                     hwnd == g_memMinusBtn || hwnd == g_memPlusBtn);
 }
 
-static void update_button_hover(void) {
+static void update_hover_states(void) {
     POINT pt;
-    HWND target = 0;
+    HWND target;
     HWND old;
+    int item = -1;
     GetCursorPos(&pt);
     target = WindowFromPoint(pt);
     if (!is_owner_button(target) || !IsWindowVisible(target) || !IsWindowEnabled(target)) target = 0;
     if (GetForegroundWindow() != g_hwnd) target = 0;
+    if (GetForegroundWindow() == g_hwnd && g_list && IsWindowVisible(g_list)) {
+        POINT cp = pt;
+        RECT lr;
+        ScreenToClient(g_list, &cp);
+        GetClientRect(g_list, &lr);
+        if (PtInRect(&lr, cp)) {
+            LRESULT hit = SendMessageW(g_list, LB_ITEMFROMPOINT, 0, MAKELPARAM(cp.x, cp.y));
+            if (HIWORD(hit) == 0) item = (int)LOWORD(hit);
+        }
+    }
+    if (item != g_listHover) {
+        g_listHover = item;
+        InvalidateRect(g_list, 0, FALSE);
+    }
     if (target == g_hoverButton) return;
     old = g_hoverButton;
     g_hoverButton = target;
@@ -357,7 +373,8 @@ static void create_controls(HWND hwnd) {
     int i;
     if (!g_listBrush) g_listBrush = CreateSolidBrush(RGB_BG);
     g_list = CreateWindowExW(0, L"LISTBOX", 0,
-                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
+                                 LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, 0);
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
@@ -383,6 +400,7 @@ static void create_controls(HWND hwnd) {
     if (g_list) {
         for (i = 0; i < 4; i++) SendMessageW(g_list, LB_ADDSTRING, 0, (LPARAM)g_items[i]);
         SendMessageW(g_list, LB_SETCURSEL, 0, 0);
+        SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
     }
     if (g_list) set_control_theme(g_list);
     SetTimer(hwnd, 2, 40, 0);
@@ -402,6 +420,7 @@ static void apply_control_fonts(void) {
     for (i = 0; i < 8; i++) {
         if (controls[i]) SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font20, TRUE);
     }
+    if (g_list) SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
 }
 
 static void layout_controls(void) {
@@ -412,7 +431,7 @@ static void layout_controls(void) {
     y = (int)(l.items[0].y * g_scale + 0.5f);
     w = (int)(l.items[0].w * g_scale + 0.5f);
     h = (int)SendMessageW(g_list, LB_GETITEMHEIGHT, 0, 0);
-    if (h < 1) h = (int)(24 * g_scale + 0.5f);
+    if (h < 1) h = (int)(22 * g_scale + 0.5f);
     h = h * 4 + 2;
     SetWindowPos(g_list, 0, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_settingsBtn, 0,
@@ -822,6 +841,35 @@ static void set_window_icon(void) {
     ReleaseDC(0, screen);
 }
 
+static void draw_list_item(const DRAWITEMSTRUCT *d) {
+    WCHAR label[256];
+    COLORREF fill;
+    COLORREF text;
+    HBRUSH brush;
+    RECT r;
+    HGDIOBJ oldFont;
+    int selected;
+    if (!d || d->itemID == (UINT)-1) return;
+    label[0] = 0;
+    SendMessageW(d->hwndItem, LB_GETTEXT, d->itemID, (LPARAM)label);
+    selected = (d->itemState & ODS_SELECTED) != 0;
+    fill = selected ? RGB_BUTTON : RGB_BG;
+    if ((int)d->itemID == g_listHover) {
+        fill = selected ? RGB_BUTTON_H : RGB(40, 44, 52);
+    }
+    text = (selected || (int)d->itemID == g_listHover) ? RGB(225, 227, 232) : RGB(196, 198, 204);
+    brush = CreateSolidBrush(fill);
+    FillRect(d->hDC, &d->rcItem, brush);
+    DeleteObject(brush);
+    r = d->rcItem;
+    r.left += (LONG)(6 * g_scale);
+    SetBkMode(d->hDC, TRANSPARENT);
+    SetTextColor(d->hDC, text);
+    oldFont = SelectObject(d->hDC, g_font20);
+    DrawTextW(d->hDC, label, -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(d->hDC, oldFont);
+}
+
 static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     WCHAR label[128];
     COLORREF fill = RGB_BUTTON;
@@ -908,7 +956,19 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 draw_owner_button((const DRAWITEMSTRUCT *)lp);
                 return TRUE;
             }
+            if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_LISTBOX) {
+                draw_list_item((const DRAWITEMSTRUCT *)lp);
+                return TRUE;
+            }
             break;
+        case WM_MEASUREITEM: {
+            MEASUREITEMSTRUCT *mis = (MEASUREITEMSTRUCT *)lp;
+            if (mis->CtlID == IDC_LIST) {
+                mis->itemHeight = (UINT)(22 * g_scale + 0.5f);
+                return TRUE;
+            }
+            break;
+        }
         case WM_COMMAND: {
             int id = LOWORD(wp);
             int code = HIWORD(wp);
@@ -948,7 +1008,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     InvalidateRect(hwnd, 0, FALSE);
                 }
             } else if (wp == 2) {
-                update_button_hover();
+                update_hover_states();
             }
             return 0;
         case WM_APP_LAUNCH_DONE:
