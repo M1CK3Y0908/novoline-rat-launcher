@@ -75,6 +75,7 @@ static HWND g_openBtn;
 static HWND g_detectBtn;
 static HWND g_memMinusBtn;
 static HWND g_memPlusBtn;
+static HWND g_hoverButton;
 static HBRUSH g_listBrush;
 static int g_dpi = 96;
 static float g_scale = 1.0f;
@@ -330,6 +331,27 @@ static void set_control_theme(HWND hwnd) {
     }
 }
 
+static int is_owner_button(HWND hwnd) {
+    return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
+                    hwnd == g_openBtn || hwnd == g_detectBtn ||
+                    hwnd == g_memMinusBtn || hwnd == g_memPlusBtn);
+}
+
+static void update_button_hover(void) {
+    POINT pt;
+    HWND target = 0;
+    HWND old;
+    GetCursorPos(&pt);
+    target = WindowFromPoint(pt);
+    if (!is_owner_button(target) || !IsWindowVisible(target) || !IsWindowEnabled(target)) target = 0;
+    if (GetForegroundWindow() != g_hwnd) target = 0;
+    if (target == g_hoverButton) return;
+    old = g_hoverButton;
+    g_hoverButton = target;
+    if (old) InvalidateRect(old, 0, FALSE);
+    if (target) InvalidateRect(target, 0, FALSE);
+}
+
 static void create_controls(HWND hwnd) {
     HINSTANCE inst = (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE);
     int i;
@@ -363,6 +385,7 @@ static void create_controls(HWND hwnd) {
         SendMessageW(g_list, LB_SETCURSEL, 0, 0);
     }
     if (g_list) set_control_theme(g_list);
+    SetTimer(hwnd, 2, 40, 0);
 }
 
 static void apply_control_fonts(void) {
@@ -444,6 +467,10 @@ static void sync_page_controls(void) {
     if (g_memPlusBtn) {
         ShowWindow(g_memPlusBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
         EnableWindow(g_memPlusBtn, !g_launching);
+    }
+    if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
+                        g_hoverButton == g_memMinusBtn || g_hoverButton == g_memPlusBtn)) {
+        g_hoverButton = 0;
     }
 }
 
@@ -802,14 +829,19 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     HBRUSH brush;
     RECT r;
     HGDIOBJ oldFont;
+    int hovered;
     if (!d) return;
+    hovered = (g_hoverButton == d->hwndItem);
     if (d->itemState & ODS_DISABLED) {
         fill = RGB(43, 47, 56);
         text = RGB(124, 128, 136);
     } else if (d->itemState & ODS_SELECTED) {
         fill = RGB_BUTTON_P;
     } else if (d->CtlID == IDC_SETTINGS && g_page == 1) {
-        fill = RGB(56, 61, 73);
+        fill = hovered ? RGB(64, 69, 82) : RGB(56, 61, 73);
+    } else if (hovered) {
+        fill = RGB_BUTTON_H;
+        text = RGB(235, 237, 242);
     }
     brush = CreateSolidBrush(fill);
     FillRect(d->hDC, &d->rcItem, brush);
@@ -828,6 +860,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:
             g_hwnd = hwnd;
+            break;
+        case WM_ACTIVATE:
+            if (LOWORD(wp) == WA_INACTIVE && g_hoverButton) {
+                HWND hovered = g_hoverButton;
+                g_hoverButton = 0;
+                InvalidateRect(hovered, 0, FALSE);
+            }
             break;
         case WM_PAINT:
             paint(hwnd);
@@ -908,6 +947,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     KillTimer(hwnd, 1);
                     InvalidateRect(hwnd, 0, FALSE);
                 }
+            } else if (wp == 2) {
+                update_button_hover();
             }
             return 0;
         case WM_APP_LAUNCH_DONE:
@@ -921,6 +962,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             DestroyWindow(hwnd);
             return 0;
         case WM_DESTROY:
+            KillTimer(hwnd, 2);
             if (g_listBrush) {
                 DeleteObject(g_listBrush);
                 g_listBrush = 0;
