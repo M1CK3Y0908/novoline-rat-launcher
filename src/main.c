@@ -10,6 +10,7 @@
 #include <math.h>
 #include "gdiplus_flat.h"
 #include "launcher.h"
+#include "versions.h"
 
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
@@ -35,6 +36,7 @@
 #define DESIGN_W 584.0f
 #define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
+#define WM_APP_VERSIONS_DONE (WM_APP + 18)
 
 #define RGB_BG        RGB(33, 36, 41)
 #define RGB_SEP       RGB(43, 46, 53)
@@ -107,38 +109,20 @@ static int dir_exists(const WCHAR *path) {
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+static void sappend(WCHAR *dst, const WCHAR *src, int cap) {
+    int n, i = 0;
+    if (!dst || !src || cap <= 0) return;
+    n = (int)wcslen(dst);
+    while (src[i] && n + i < cap - 1) {
+        dst[n + i] = src[i];
+        i++;
+    }
+    dst[n + i] = 0;
+}
+
 static HFONT g_font24, g_font22, g_font20, g_font16, g_font36;
 static float g_fontScale = -1.0f;
-
-static const WCHAR *g_items[4] = {
-    L"Novoline Release #100421",
-    L"Novoline Release #100421",
-    L"Novoline Beta #100221",
-    L"Novoline Beta #100121"
-};
-
-static const WCHAR *g_notes[4][3] = {
-    {
-        L"Fixed crashes caused by loading scripts",
-        L"Fixed connection timeout issue on Hypixel (note: please test this)",
-        L"Fixed 'module may not be registered twice' error"
-    },
-    {
-        L"Fixed crashes caused by loading scripts",
-        L"Fixed connection timeout issue on Hypixel (note: please test this)",
-        L"Fixed 'module may not be registered twice' error"
-    },
-    {
-        L"Added new module manager",
-        L"Improved render performance",
-        L"Fixed several crashes"
-    },
-    {
-        L"Initial beta release",
-        L"Added script loader",
-        L"Various stability fixes"
-    }
-};
+static VersionList g_versions;
 
 typedef struct LaunchResult {
     WCHAR message[512];
@@ -368,12 +352,24 @@ static void update_hover_states(void) {
     if (target) InvalidateRect(target, 0, FALSE);
 }
 
+static void populate_version_list(void) {
+    int i;
+    if (!g_list) return;
+    SendMessageW(g_list, LB_RESETCONTENT, 0, 0);
+    for (i = 0; i < g_versions.count; i++) {
+        SendMessageW(g_list, LB_ADDSTRING, 0, (LPARAM)g_versions.items[i].title);
+    }
+    if (g_versions.count <= 0) g_selected = 0;
+    else if (g_selected >= g_versions.count) g_selected = g_versions.count - 1;
+    if (g_versions.count > 0) SendMessageW(g_list, LB_SETCURSEL, (WPARAM)g_selected, 0);
+    InvalidateRect(g_list, 0, FALSE);
+}
+
 static void create_controls(HWND hwnd) {
     HINSTANCE inst = (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE);
-    int i;
     if (!g_listBrush) g_listBrush = CreateSolidBrush(RGB_BG);
     g_list = CreateWindowExW(0, L"LISTBOX", 0,
-                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
+                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
                                  LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, 0);
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
@@ -398,10 +394,9 @@ static void create_controls(HWND hwnd) {
                                    WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_PLUS, inst, 0);
     if (g_list) {
-        for (i = 0; i < 4; i++) SendMessageW(g_list, LB_ADDSTRING, 0, (LPARAM)g_items[i]);
-        SendMessageW(g_list, LB_SETCURSEL, 0, 0);
         SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
     }
+    populate_version_list();
     if (g_list) set_control_theme(g_list);
     SetTimer(hwnd, 2, 40, 0);
 }
@@ -526,21 +521,55 @@ static void draw_shapes(GpGraphics *g, const Layout *l) {
     draw_toast_shape(g, l);
 }
 
+static void draw_description(HDC dc, const Layout *l, const WCHAR *description) {
+    WCHAR buffer[VERSION_DESC_CAP];
+    WCHAR *p;
+    int y = 50;
+    int lines = 0;
+    if (!description || !description[0]) {
+        draw_text(dc, L"No description available.", l->mainX, y, l->mainW, 18, g_font24,
+                  RGB(158, 161, 168), DT_LEFT | DT_TOP | DT_SINGLELINE);
+        return;
+    }
+    scopy(buffer, description, VERSION_DESC_CAP);
+    p = buffer;
+    while (*p && y < l->H - 44 && lines < 16) {
+        WCHAR *end = wcschr(p, L'\n');
+        WCHAR *line = p;
+        int n;
+        if (end) *end = 0;
+        n = (int)wcslen(line);
+        while (n > 0 && (line[n - 1] == L'\r' || line[n - 1] == L' ')) line[--n] = 0;
+        if (line[0]) {
+            if (line[0] == L'[' && line[1] == L'/' && line[2] == L']') {
+                WCHAR *body = line + 3;
+                while (*body == L' ') body++;
+                draw_text(dc, L"[/]", l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
+                          DT_LEFT | DT_TOP | DT_SINGLELINE);
+                draw_text(dc, body, l->mainX + 20, y, l->mainW - 20, 18, g_font24,
+                          RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            } else {
+                draw_text(dc, line, l->mainX, y, l->mainW, 18, g_font24,
+                          RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
+            y += 18;
+            lines++;
+        }
+        if (!end) break;
+        p = end + 1;
+    }
+}
+
 static void draw_texts(HDC dc, const Layout *l) {
-    int i;
 
     if (g_page == 0) {
-        draw_text(dc, g_items[g_selected], l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
+        const VersionEntry *entry = (g_versions.count > 0) ? &g_versions.items[g_selected] : 0;
+        draw_text(dc, entry ? entry->title : L"Novoline", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        draw_text(dc, L"Released ... days ago", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
+        draw_text(dc, entry && entry->released[0] ? entry->released : L"Released ... days ago",
+                  l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        for (i = 0; i < 3; i++) {
-            float y = 50.0f + i * 18.0f;
-            draw_text(dc, L"[/]", l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
-                      DT_LEFT | DT_TOP | DT_SINGLELINE);
-            draw_text(dc, g_notes[g_selected][i], l->mainX + 20, y, l->mainW - 20, 18, g_font24,
-                      RGB(187, 190, 196), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        }
+        draw_description(dc, l, entry ? entry->description : L"");
     } else {
         WCHAR memText[64];
         WCHAR profile[96];
@@ -678,6 +707,18 @@ static void apply_initial_size(HWND hwnd, int dpi) {
     g_clientH = ch;
 }
 
+
+static DWORD WINAPI versions_thread(LPVOID param) {
+    VersionList *list = (VersionList *)calloc(1, sizeof(VersionList));
+    (void)param;
+    if (!list) return 0;
+    if (versions_fetch(list)) {
+        PostMessageW(g_hwnd, WM_APP_VERSIONS_DONE, 1, (LPARAM)list);
+    } else {
+        PostMessageW(g_hwnd, WM_APP_VERSIONS_DONE, 0, (LPARAM)list);
+    }
+    return 0;
+}
 
 static DWORD WINAPI launch_thread(LPVOID param) {
     LaunchResult *r = (LaunchResult *)param;
@@ -1018,6 +1059,28 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (g_launchResult.ok) settings_save(&g_settings);
             InvalidateRect(hwnd, 0, FALSE);
             return 0;
+        case WM_APP_VERSIONS_DONE: {
+            VersionList *remote = (VersionList *)lp;
+            int ok = (int)wp;
+            if (remote) {
+                if (ok && remote->count > 0) {
+                    memcpy(&g_versions, remote, sizeof(VersionList));
+                    g_selected = 0;
+                    populate_version_list();
+                    InvalidateRect(hwnd, 0, FALSE);
+                } else {
+                    WCHAR text[320];
+                    scopy(text, L"Version list update failed", 320);
+                    if (remote->error[0]) {
+                        sappend(text, L": ", 320);
+                        sappend(text, remote->error, 320);
+                    }
+                    set_toast(text, 5000, 1);
+                }
+                free(remote);
+            }
+            return 0;
+        }
         case WM_CLOSE:
             DestroyWindow(hwnd);
             return 0;
@@ -1083,6 +1146,8 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     si.GdiplusVersion = 1;
     if (GdiplusStartup(&g_gdiplusToken, &si, 0) != 0) return 0;
     settings_load(&g_settings);
+    versions_fallback(&g_versions);
+    g_selected = 0;
     g_appIcon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
     if (!g_appIcon) set_window_icon();
     ZeroMemory(&wc, sizeof(wc));
@@ -1118,6 +1183,10 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     ShowWindow(g_hwnd, show);
     UpdateWindow(g_hwnd);
     apply_window_look(g_hwnd);
+    {
+        HANDLE th = CreateThread(0, 0, versions_thread, 0, 0, 0);
+        if (th) CloseHandle(th);
+    }
     while (GetMessageW(&msg, 0, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);

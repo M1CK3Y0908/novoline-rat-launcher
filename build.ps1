@@ -13,7 +13,8 @@ if (-not (Test-Path -LiteralPath $rc))  { throw "rcedit not found: $rc" }
 $sources = @(
     'src\main.c',
     'src\json.c',
-    'src\launcher.c'
+    'src\launcher.c',
+    'src\versions.c'
 )
 $libs = @(
     '-lgdiplus',
@@ -21,6 +22,7 @@ $libs = @(
     '-luser32',
     '-lgdi32',
     '-ladvapi32',
+    '-lwinhttp',
     '-lkernel32'
 )
 

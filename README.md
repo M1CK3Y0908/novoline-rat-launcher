@@ -26,7 +26,9 @@ dist\NovolineLauncher.exe
 - 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
-- 左侧四个版本条目可切换，右侧内容随之更新。
+- 启动时从 `https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions.rat` 获取版本列表和右侧发行说明，使用后台线程下载并解析，不阻塞界面。
+- 网络不可用或数据解析失败时，自动回退到内置的版本数据，并在界面底部显示错误提示。
+- 左侧版本条目可切换，右侧标题和发行说明随选择更新。
 - `Settings`：显示游戏目录、Java、内存和离线档案；可打开游戏目录、自动探测 Java、调整内存。
 - `Log out`：切换为离线档案 `Player`。
 - `Launch`：
@@ -47,6 +49,8 @@ dist\NovolineLauncher.exe     可直接分发的单文件副本
 src\                           C 源码
   main.c                       Win32 窗口、绘制、交互
   launcher.c / launcher.h      Minecraft / Java 探测与启动
+  versions.c / versions.h      远程 versions.rat 下载与解析
+  winhttp_flat.h               WinHTTP API 声明
   json.c / json.h              轻量 JSON 解析
   gdiplus_flat.h               GDI+ 扁平 API 声明
   win_extra.h                  TCC 缺失的系统 API 声明
