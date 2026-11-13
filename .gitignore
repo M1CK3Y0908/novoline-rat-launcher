@@ -1,0 +1,15 @@
+﻿# Build and local files
+*.o
+*.obj
+*.pdb
+*.ilk
+*.log
+*.raw.exe
+diag-*
+.remote-inspect/
+__pycache__/
+.vs/
+
+# Editor
+.vscode/
+.idea/
