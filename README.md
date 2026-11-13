@@ -23,6 +23,7 @@ dist\NovolineLauncher.exe
 
 - 使用 **Win32 原生标题栏**：窗口标题、标题栏图标、最小化 / 最大化 / 关闭按钮全部由 Windows 系统绘制，不使用自绘标题栏元素。
 - 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用原生 `BUTTON` 控件（Settings / Log out / Launch / Open / Detect / - / + / Done），没有自绘按钮或列表。
+- 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
 - 左侧四个版本条目可切换，右侧内容随之更新。
@@ -73,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 ## 说明
 
-- 客户区按参考图设计为 1237 × 779（96 DPI 基准），窗口总尺寸由原生标题栏和边框自动计算。
+- 窗口客户区以 960 × 620（96 DPI / Windows 100% 缩放）为基准；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
 - 原生 `LISTBOX` / `BUTTON` 的字体、颜色和焦点行为由 Win32 控件处理；按钮和列表的边框会跟随 Windows 主题。
 - 窗口标题和标题栏图标由 Win32 原生绘制。
