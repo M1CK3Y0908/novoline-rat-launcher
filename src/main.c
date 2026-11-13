@@ -25,12 +25,10 @@
 #define APP_CLASS L"NovolineLauncherWindow"
 #define APP_TITLE L"Novoline Launcher"
 #define DESIGN_W 1237.0f
-#define DESIGN_H 827.0f
-#define TITLE_H 48.0f
+#define DESIGN_H 779.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
 
 #define RGB_BG        RGB(33, 36, 41)
-#define RGB_TITLEBAR  RGB(36, 37, 42)
 #define RGB_SEP       RGB(43, 46, 53)
 #define RGB_PANEL     RGB(37, 41, 48)
 #define RGB_BORDER    RGB(48, 51, 59)
@@ -43,9 +41,6 @@
 #define RGB_BUTTON_P  RGB(45, 49, 59)
 #define RGB_BTN_BORD  RGB(65, 69, 81)
 #define RGB_GREEN     RGB(86, 200, 120)
-#define RGB_PURPLE    RGB(99, 87, 232)
-#define RGB_PURPLE_L  RGB(139, 126, 255)
-#define RGB_CLOSE_H   RGB(196, 43, 28)
 
 typedef struct TRect {
     float x, y, w, h;
@@ -57,15 +52,12 @@ typedef struct Layout {
     TRect settingsBtn;
     TRect logoutBtn;
     TRect launchBtn;
-    TRect minBtn, maxBtn, closeBtn;
     TRect card;
     TRect openBtn, detectBtn, memMinus, memPlus;
     float mainX, mainW;
 } Layout;
 
-static HINSTANCE g_inst;
-static HWND g_hwnd;
-static ULONG_PTR g_gdiplusToken;
+static HWND g_hwnd;static ULONG_PTR g_gdiplusToken;
 static int g_dpi = 96;
 static float g_scale = 1.0f;
 static int g_clientW = 0, g_clientH = 0;
@@ -73,9 +65,7 @@ static int g_page = 0;
 static int g_selected = 0;
 static int g_hot = 0;
 static int g_pressed = 0;
-static int g_maximized = 0;
 static int g_launching = 0;
-static int g_dwmRounded = 0;
 static int g_tracking = 0;
 static LauncherSettings g_settings;
 static WCHAR g_toast[512];
@@ -135,9 +125,6 @@ static const WCHAR *g_notes[4][3] = {
 
 typedef enum HitId {
     HIT_NONE = 0,
-    HIT_MIN = 1,
-    HIT_MAX = 2,
-    HIT_CLOSE = 3,
     HIT_ITEM1 = 10,
     HIT_ITEM2 = 11,
     HIT_ITEM3 = 12,
@@ -346,45 +333,6 @@ static float text_width(HDC dc, HFONT font, const WCHAR *text) {
 
 /* ---------- icons ---------- */
 
-static void draw_logo(GpGraphics *g, float x, float y, float w, float h) {
-    float p[8];
-    p[0] = x + w * 0.20f; p[1] = y + h * 0.93f;
-    p[2] = x + w * 0.36f; p[3] = y + h * 0.08f;
-    p[4] = x + w * 0.69f; p[5] = y + h * 0.96f;
-    p[6] = x + w * 0.86f; p[7] = y + h * 0.10f;
-    {
-        GpPath *path = 0;
-        GpPen *pen = 0;
-        GdipCreatePath(GpFillModeWinding, &path);
-        if (!path) return;
-        GdipAddPathLine(path, p[0] * g_scale, p[1] * g_scale, p[2] * g_scale, p[3] * g_scale);
-        GdipAddPathLine(path, p[2] * g_scale, p[3] * g_scale, p[4] * g_scale, p[5] * g_scale);
-        GdipAddPathLine(path, p[4] * g_scale, p[5] * g_scale, p[6] * g_scale, p[7] * g_scale);
-        GdipCreatePen1(gp_color(RGB_PURPLE, 38), 9.0f * g_scale, GpUnitPixel, &pen);
-        if (pen) {
-            GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapRound);
-            GdipSetPenLineJoin(pen, GpLineJoinRound);
-            GdipDrawPath(g, pen, path);
-            GdipDeletePen(pen);
-        }
-        GdipCreatePen1(gp_color(RGB_PURPLE, 255), 5.6f * g_scale, GpUnitPixel, &pen);
-        if (pen) {
-            GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapRound);
-            GdipSetPenLineJoin(pen, GpLineJoinRound);
-            GdipDrawPath(g, pen, path);
-            GdipDeletePen(pen);
-        }
-        GdipCreatePen1(gp_color(RGB_PURPLE_L, 255), 2.2f * g_scale, GpUnitPixel, &pen);
-        if (pen) {
-            GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapRound);
-            GdipSetPenLineJoin(pen, GpLineJoinRound);
-            GdipDrawPath(g, pen, path);
-            GdipDeletePen(pen);
-        }
-        GdipDeletePath(path);
-    }
-}
-
 static void draw_gear(GpGraphics *g, float cx, float cy, float size, COLORREF color) {
     int i;
     float outer = size * 0.49f;
@@ -435,22 +383,6 @@ static void draw_check(GpGraphics *g, float cx, float cy, float size, COLORREF c
     draw_line(g, color, cx - size * 0.10f, cy + size * 0.34f, cx + size * 0.46f, cy - size * 0.34f, 2.3f);
 }
 
-static void draw_window_icon(GpGraphics *g, int id, float cx, float cy, COLORREF color, int hovered) {
-    if (id == HIT_MIN) {
-        draw_line(g, color, cx - 9, cy, cx + 9, cy, 1.7f);
-    } else if (id == HIT_MAX) {
-        if (g_maximized) {
-            stroke_round(g, color, cx - 8, cy - 5, 12, 12, 2.0f, 1.5f);
-            stroke_round(g, color, cx - 3, cy - 9, 12, 12, 2.0f, 1.5f);
-        } else {
-            stroke_round(g, color, cx - 8.5f, cy - 8.5f, 17, 17, 2.4f, 1.5f);
-        }
-    } else if (id == HIT_CLOSE) {
-        draw_line(g, color, cx - 7.5f, cy - 7.5f, cx + 7.5f, cy + 7.5f, 1.7f);
-        draw_line(g, color, cx + 7.5f, cy - 7.5f, cx - 7.5f, cy + 7.5f, 1.7f);
-    }
-}
-
 /* ---------- layout and hit testing ---------- */
 
 static Layout make_layout(void) {
@@ -466,7 +398,7 @@ static Layout make_layout(void) {
     if (l.mainW < 80) l.mainW = 80;
     for (i = 0; i < 4; i++) {
         l.items[i].x = 12.0f;
-        l.items[i].y = 92.0f + i * 42.0f;
+        l.items[i].y = 44.0f + i * 42.0f;
         l.items[i].w = 296.0f;
         l.items[i].h = 42.0f;
     }
@@ -482,36 +414,24 @@ static Layout make_layout(void) {
     l.launchBtn.y = H - 69.0f;
     l.launchBtn.w = W - 346.0f - 27.0f;
     l.launchBtn.h = 51.0f;
-    l.minBtn.x = W - 239.0f - 22.0f;
-    l.minBtn.y = 17.0f;
-    l.minBtn.w = 44.0f;
-    l.minBtn.h = 32.0f;
-    l.maxBtn.x = W - 145.0f - 22.0f;
-    l.maxBtn.y = 17.0f;
-    l.maxBtn.w = 44.0f;
-    l.maxBtn.h = 32.0f;
-    l.closeBtn.x = W - 51.0f - 22.0f;
-    l.closeBtn.y = 17.0f;
-    l.closeBtn.w = 44.0f;
-    l.closeBtn.h = 32.0f;
     l.card.x = 345.0f;
-    l.card.y = 178.0f;
+    l.card.y = 130.0f;
     l.card.w = l.mainW;
     l.card.h = 330.0f;
     l.openBtn.x = l.card.x + l.card.w - 112.0f;
-    l.openBtn.y = 210.0f;
+    l.openBtn.y = 162.0f;
     l.openBtn.w = 92.0f;
     l.openBtn.h = 32.0f;
     l.detectBtn.x = l.card.x + l.card.w - 112.0f;
-    l.detectBtn.y = 286.0f;
+    l.detectBtn.y = 238.0f;
     l.detectBtn.w = 92.0f;
     l.detectBtn.h = 32.0f;
     l.memMinus.x = l.card.x + l.card.w - 92.0f;
-    l.memMinus.y = 362.0f;
+    l.memMinus.y = 314.0f;
     l.memMinus.w = 34.0f;
     l.memMinus.h = 32.0f;
     l.memPlus.x = l.card.x + l.card.w - 50.0f;
-    l.memPlus.y = 362.0f;
+    l.memPlus.y = 314.0f;
     l.memPlus.w = 34.0f;
     l.memPlus.h = 32.0f;
     return l;
@@ -524,9 +444,6 @@ static int rect_hit(const TRect *r, float x, float y) {
 static int hit_test(float x, float y) {
     Layout l = make_layout();
     int i;
-    if (rect_hit(&l.closeBtn, x, y)) return HIT_CLOSE;
-    if (rect_hit(&l.maxBtn, x, y)) return HIT_MAX;
-    if (rect_hit(&l.minBtn, x, y)) return HIT_MIN;
     if (g_page == 1) {
         if (rect_hit(&l.openBtn, x, y)) return HIT_OPEN;
         if (rect_hit(&l.detectBtn, x, y)) return HIT_DETECT;
@@ -553,32 +470,6 @@ static void set_toast(const WCHAR *text, DWORD ms, int error) {
 }
 
 /* ---------- painting ---------- */
-
-static void draw_window_controls(GpGraphics *g, const Layout *l) {
-    int ids[3];
-    TRect *rs[3];
-    int i;
-    ids[0] = HIT_MIN; rs[0] = (TRect *)&l->minBtn;
-    ids[1] = HIT_MAX; rs[1] = (TRect *)&l->maxBtn;
-    ids[2] = HIT_CLOSE; rs[2] = (TRect *)&l->closeBtn;
-    for (i = 0; i < 3; i++) {
-        int hot = (g_hot == ids[i]);
-        int pressed = (g_pressed == ids[i]);
-        if (hot || pressed) {
-            if (ids[i] == HIT_CLOSE) {
-                panel(g, pressed ? RGB(160, 32, 20) : RGB_CLOSE_H, RGB_CLOSE_H, rs[i]->x, rs[i]->y, rs[i]->w, rs[i]->h, 5, 0);
-            } else {
-                panel(g, pressed ? RGB(67, 70, 79) : RGB(45, 48, 55), RGB(45, 48, 55), rs[i]->x, rs[i]->y, rs[i]->w, rs[i]->h, 5, 0);
-            }
-        }
-        {
-            COLORREF col = (ids[i] == HIT_CLOSE && hot) ? RGB(255, 255, 255) : RGB(145, 148, 156);
-            float cx = rs[i]->x + rs[i]->w / 2;
-            float cy = rs[i]->y + rs[i]->h / 2;
-            draw_window_icon(g, ids[i], cx, cy, col, hot);
-        }
-    }
-}
 
 static void draw_buttons(GpGraphics *g, const Layout *l) {
     int ids[3];
@@ -611,16 +502,9 @@ static void draw_buttons(GpGraphics *g, const Layout *l) {
     }
 }
 
-static void draw_titlebar(GpGraphics *g, const Layout *l) {
-    fill_rect(g, RGB_TITLEBAR, 0, 0, l->W, TITLE_H);
-    fill_rect(g, RGB_SEP, 0, TITLE_H - 1, l->W, 1);
-    draw_logo(g, 8.0f, 18.0f, 38.0f, 26.0f);
-    draw_window_controls(g, l);
-}
-
 static void draw_sidebar(GpGraphics *g, const Layout *l) {
     int i;
-    fill_rect(g, RGB_SEP, 320, TITLE_H, 1, l->H - TITLE_H);
+    fill_rect(g, RGB_SEP, 320, 0, 1, l->H);
     for (i = 0; i < 4; i++) {
         int selected = (i == g_selected);
         int hot = (g_hot == HIT_ITEM1 + i);
@@ -653,24 +537,17 @@ static void draw_toast_shape(GpGraphics *g, const Layout *l) {
           x, l->H - 132, w, 44, 9, 1);
 }
 
-static void draw_border(GpGraphics *g, const Layout *l) {
-    stroke_round(g, RGB(51, 54, 62), 0.5f, 0.5f, l->W - 1, l->H - 1, 8, 1);
-}
-
 static void draw_shapes(GpGraphics *g, const Layout *l) {
     fill_rect(g, RGB_BG, 0, 0, l->W, l->H);
-    draw_titlebar(g, l);
     draw_sidebar(g, l);
     if (g_page == 0) draw_release_shapes(g, l);
     else draw_settings_shapes(g, l);
     draw_buttons(g, l);
     draw_toast_shape(g, l);
-    draw_border(g, l);
 }
 
 static void draw_texts(HDC dc, const Layout *l) {
     int i;
-    draw_text(dc, APP_TITLE, 60, 18, 260, 30, g_font24, RGB(139, 142, 150), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     for (i = 0; i < 4; i++) {
         draw_text(dc, g_items[i], l->items[i].x + 9, l->items[i].y, l->items[i].w - 10, l->items[i].h,
@@ -704,12 +581,12 @@ static void draw_texts(HDC dc, const Layout *l) {
     }
 
     if (g_page == 0) {
-        draw_text(dc, g_items[g_selected], l->mainX, 73, l->mainW, 48, g_font36, RGB_HEADLINE,
+        draw_text(dc, g_items[g_selected], l->mainX, 25, l->mainW, 48, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        draw_text(dc, L"Released ... days ago", l->mainX, 125, l->mainW, 34, g_font24, RGB(158, 161, 168),
+        draw_text(dc, L"Released ... days ago", l->mainX, 77, l->mainW, 34, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         for (i = 0; i < 3; i++) {
-            float y = 157.0f + i * 33.0f;
+            float y = 109.0f + i * 33.0f;
             draw_text(dc, L"[/]", l->mainX, y, 32, 34, g_font24, RGB(150, 153, 161),
                       DT_LEFT | DT_TOP | DT_SINGLELINE);
             draw_text(dc, g_notes[g_selected][i], l->mainX + 34, y, l->mainW - 34, 34, g_font24,
@@ -718,42 +595,42 @@ static void draw_texts(HDC dc, const Layout *l) {
     } else {
         WCHAR memText[64];
         WCHAR profile[96];
-        draw_text(dc, L"Settings", l->mainX, 78, l->mainW, 48, g_font36, RGB_HEADLINE,
+        draw_text(dc, L"Settings", l->mainX, 30, l->mainW, 48, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"Launcher configuration", l->mainX, 128, l->mainW, 28, g_font24, RGB(158, 161, 168),
+        draw_text(dc, L"Launcher configuration", l->mainX, 80, l->mainW, 28, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"GAME DIRECTORY", l->card.x + 24, 201, l->card.w - 160, 22, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"GAME DIRECTORY", l->card.x + 24, 153, l->card.w - 160, 22, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 24, 222, l->card.w - 160, 32, g_font22, RGB(197, 199, 205),
+        draw_text(dc, g_settings.gameDir, l->card.x + 24, 174, l->card.w - 160, 32, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
         draw_text(dc, L"Open", l->openBtn.x, l->openBtn.y, l->openBtn.w, l->openBtn.h, g_font18,
                   RGB(195, 197, 203), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        draw_text(dc, L"JAVA RUNTIME", l->card.x + 24, 277, l->card.w - 160, 22, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"JAVA RUNTIME", l->card.x + 24, 229, l->card.w - 160, 22, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Auto-detect when launching",
-                  l->card.x + 24, 298, l->card.w - 160, 32, g_font22, RGB(197, 199, 205),
+                  l->card.x + 24, 250, l->card.w - 160, 32, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
         draw_text(dc, L"Detect", l->detectBtn.x, l->detectBtn.y, l->detectBtn.w, l->detectBtn.h, g_font18,
                   RGB(195, 197, 203), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        draw_text(dc, L"MEMORY", l->card.x + 24, 353, l->card.w - 200, 22, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"MEMORY", l->card.x + 24, 305, l->card.w - 200, 22, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(memText, L"%d MB", g_settings.memoryMB);
-        draw_text(dc, memText, l->card.x + 24, 374, 200, 32, g_font22, RGB(197, 199, 205),
+        draw_text(dc, memText, l->card.x + 24, 326, 200, 32, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, L"-", l->memMinus.x, l->memMinus.y, l->memMinus.w, l->memMinus.h, g_font20,
                   RGB(205, 207, 212), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         draw_text(dc, L"+", l->memPlus.x, l->memPlus.y, l->memPlus.w, l->memPlus.h, g_font20,
                   RGB(205, 207, 212), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        draw_text(dc, L"PROFILE", l->card.x + 24, 429, l->card.w - 200, 22, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"PROFILE", l->card.x + 24, 381, l->card.w - 200, 22, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(profile, L"%s  (offline)", g_settings.username);
-        draw_text(dc, profile, l->card.x + 24, 450, l->card.w - 48, 32, g_font22, RGB(197, 199, 205),
+        draw_text(dc, profile, l->card.x + 24, 402, l->card.w - 48, 32, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
-                  l->card.x + 24, 478, l->card.w - 48, 24, g_font16, RGB(126, 130, 138),
+                  l->card.x + 24, 430, l->card.w - 48, 24, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, L"Settings are saved automatically.", l->mainX, l->card.y + l->card.h + 14,
                   l->mainW, 24, g_font16, RGB(111, 115, 124), DT_LEFT | DT_SINGLELINE);
@@ -861,25 +738,33 @@ static void paint(HWND hwnd) {
 
 static void apply_initial_size(HWND hwnd, int dpi) {
     RECT work;
-    int sw, sh, x, y;
+    RECT frame;
+    int cw, ch, sw, sh, x, y;
     float ds, fitX, fitY, s;
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     ds = (float)dpi / 96.0f;
-    fitX = (float)(work.right - work.left - 34) / DESIGN_W;
-    fitY = (float)(work.bottom - work.top - 34) / DESIGN_H;
+    fitX = (float)(work.right - work.left - 60) / DESIGN_W;
+    fitY = (float)(work.bottom - work.top - 60) / DESIGN_H;
     s = ds;
     if (fitX < s) s = fitX;
     if (fitY < s) s = fitY;
     if (s < 0.68f) s = 0.68f;
     g_scale = s;
     g_dpi = dpi;
-    sw = (int)(DESIGN_W * s + 0.5f);
-    sh = (int)(DESIGN_H * s + 0.5f);
+    cw = (int)(DESIGN_W * s + 0.5f);
+    ch = (int)(DESIGN_H * s + 0.5f);
+    frame.left = 0;
+    frame.top = 0;
+    frame.right = cw;
+    frame.bottom = ch;
+    AdjustWindowRectEx(&frame, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
+    sw = frame.right - frame.left;
+    sh = frame.bottom - frame.top;
     x = work.left + (work.right - work.left - sw) / 2;
     y = work.top + (work.bottom - work.top - sh) / 2;
     SetWindowPos(hwnd, 0, x, y, sw, sh, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    g_clientW = sw;
-    g_clientH = sh;
+    g_clientW = cw;
+    g_clientH = ch;
 }
 
 
@@ -917,22 +802,11 @@ static void open_game_folder(void) {
 }
 
 static void activate(int id) {
-    if (g_launching && id != HIT_MIN && id != HIT_MAX && id != HIT_CLOSE &&
-        id != HIT_ITEM1 && id != HIT_ITEM2 && id != HIT_ITEM3 && id != HIT_ITEM4) {
+    if (g_launching && id != HIT_ITEM1 && id != HIT_ITEM2 && id != HIT_ITEM3 && id != HIT_ITEM4) {
         set_toast(L"Please wait for Minecraft to start.", 2500, 0);
         return;
     }
     switch (id) {
-        case HIT_MIN:
-            ShowWindow(g_hwnd, SW_MINIMIZE);
-            break;
-        case HIT_MAX:
-            if (IsZoomed(g_hwnd)) ShowWindow(g_hwnd, SW_RESTORE);
-            else ShowWindow(g_hwnd, SW_MAXIMIZE);
-            break;
-        case HIT_CLOSE:
-            PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
-            break;
         case HIT_ITEM1:
         case HIT_ITEM2:
         case HIT_ITEM3:
@@ -987,75 +861,23 @@ static void activate(int id) {
 
 /* ---------- window plumbing ---------- */
 
-static LRESULT hit_test_nc(LPARAM lp) {
-    POINT pt;
-    RECT rc;
-    float x, y;
-    Layout l;
-    int border = (int)(6 * g_scale + 0.5f);
-    if (border < 4) border = 4;
-    pt.x = GET_X_LPARAM(lp);
-    pt.y = GET_Y_LPARAM(lp);
-    ScreenToClient(g_hwnd, &pt);
-    GetClientRect(g_hwnd, &rc);
-    if (pt.x < 0 || pt.y < 0 || pt.x >= rc.right || pt.y >= rc.bottom) return HTNOWHERE;
-    if (!g_maximized) {
-        int left = pt.x < border;
-        int right = pt.x >= rc.right - border;
-        int top = pt.y < border;
-        int bottom = pt.y >= rc.bottom - border;
-        if (top && left) return HTTOPLEFT;
-        if (top && right) return HTTOPRIGHT;
-        if (bottom && left) return HTBOTTOMLEFT;
-        if (bottom && right) return HTBOTTOMRIGHT;
-        if (left) return HTLEFT;
-        if (right) return HTRIGHT;
-        if (top) return HTTOP;
-        if (bottom) return HTBOTTOM;
-    }
-    x = (float)pt.x / g_scale;
-    y = (float)pt.y / g_scale;
-    l = make_layout();
-    if (rect_hit(&l.closeBtn, x, y) || rect_hit(&l.maxBtn, x, y) || rect_hit(&l.minBtn, x, y)) return HTCLIENT;
-    if (y < TITLE_H) return HTCAPTION;
-    return HTCLIENT;
-}
-
 static void apply_window_look(HWND hwnd) {
     HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
     if (dwm) {
         typedef HRESULT (WINAPI *PFN_DwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD);
-        typedef HRESULT (WINAPI *PFN_DwmExtendFrameIntoClientArea)(HWND, const void *);
-        typedef struct Margins { int left, right, top, bottom; } Margins;
         PFN_DwmSetWindowAttribute setAttr =
             (PFN_DwmSetWindowAttribute)GetProcAddress(dwm, "DwmSetWindowAttribute");
-        PFN_DwmExtendFrameIntoClientArea extend =
-            (PFN_DwmExtendFrameIntoClientArea)GetProcAddress(dwm, "DwmExtendFrameIntoClientArea");
         if (setAttr) {
             BOOL dark = TRUE;
-            int corner = 2;
-            int policy = 2;
-            HRESULT hr;
+            COLORREF caption = RGB(36, 37, 42);
+            COLORREF text = RGB(200, 202, 208);
+            COLORREF border = RGB(51, 54, 62);
             setAttr(hwnd, 20, &dark, sizeof(dark));
-            setAttr(hwnd, 2, &policy, sizeof(policy));
-            hr = setAttr(hwnd, 33, &corner, sizeof(corner));
-            g_dwmRounded = SUCCEEDED(hr);
-        }
-        if (extend) {
-            Margins m;
-            m.left = 1;
-            m.right = 1;
-            m.top = 1;
-            m.bottom = 1;
-            extend(hwnd, &m);
+            setAttr(hwnd, 35, &caption, sizeof(caption));
+            setAttr(hwnd, 36, &text, sizeof(text));
+            setAttr(hwnd, 34, &border, sizeof(border));
         }
         FreeLibrary(dwm);
-    }
-    if (g_dwmRounded) {
-        SetWindowRgn(hwnd, 0, TRUE);
-    } else {
-        HRGN rgn = CreateRoundRectRgn(0, 0, g_clientW + 1, g_clientH + 1, 16, 16);
-        if (rgn) SetWindowRgn(hwnd, rgn, TRUE);
     }
 }
 
@@ -1116,7 +938,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:
             g_hwnd = hwnd;
-            g_inst = (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE);
             break;
         case WM_PAINT:
             paint(hwnd);
@@ -1126,11 +947,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_SIZE:
             g_clientW = LOWORD(lp);
             g_clientH = HIWORD(lp);
-            g_maximized = IsZoomed(hwnd) ? 1 : 0;
-            if (!g_dwmRounded && g_clientW > 0 && g_clientH > 0) {
-                HRGN rgn = CreateRoundRectRgn(0, 0, g_clientW + 1, g_clientH + 1, 16, 16);
-                if (rgn) SetWindowRgn(hwnd, rgn, TRUE);
-            }
             InvalidateRect(hwnd, 0, FALSE);
             return 0;
         case WM_DPICHANGED: {
@@ -1145,31 +961,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_GETMINMAXINFO: {
             MINMAXINFO *mmi = (MINMAXINFO *)lp;
-            mmi->ptMinTrackSize.x = (LONG)(980 * g_scale);
-            mmi->ptMinTrackSize.y = (LONG)(650 * g_scale);
+            RECT r;
+            r.left = 0;
+            r.top = 0;
+            r.right = (LONG)(980 * g_scale);
+            r.bottom = (LONG)(650 * g_scale);
+            AdjustWindowRectEx(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
+            mmi->ptMinTrackSize.x = r.right - r.left;
+            mmi->ptMinTrackSize.y = r.bottom - r.top;
             return 0;
         }
-        case WM_NCCALCSIZE:
-            if (wp) {
-                NCCALCSIZE_PARAMS *p = (NCCALCSIZE_PARAMS *)lp;
-                if (IsZoomed(hwnd)) {
-                    HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                    MONITORINFO mi;
-                    mi.cbSize = sizeof(mi);
-                    if (GetMonitorInfoW(mon, &mi)) p->rgrc[0] = mi.rcWork;
-                }
-                return 0;
-            }
-            return 0;
-        case WM_NCHITTEST:
-            return hit_test_nc(lp);
-        case WM_NCLBUTTONDBLCLK:
-            if (wp == HTCAPTION) {
-                if (IsZoomed(hwnd)) ShowWindow(hwnd, SW_RESTORE);
-                else ShowWindow(hwnd, SW_MAXIMIZE);
-                return 0;
-            }
-            break;
         case WM_MOUSEMOVE: {
             float x = (float)GET_X_LPARAM(lp) / g_scale;
             float y = (float)GET_Y_LPARAM(lp) / g_scale;
@@ -1318,13 +1119,14 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     wc.hIcon = g_appIcon ? g_appIcon : LoadIconW(0, IDI_APPLICATION);
     wc.hIconSm = wc.hIcon;
     wc.hCursor = LoadCursorW(0, IDC_ARROW);
-    wc.hbrBackground = 0;
+    wc.hbrBackground = CreateSolidBrush(RGB_BG);
     wc.lpszClassName = APP_CLASS;
     if (!RegisterClassExW(&wc)) return 0;
     g_hwnd = CreateWindowExW(WS_EX_APPWINDOW, APP_CLASS, APP_TITLE,
-                             WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CLIPCHILDREN,
+                             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                              CW_USEDEFAULT, CW_USEDEFAULT, 1200, 800, 0, 0, hi, 0);
     if (!g_hwnd) return 0;
+    SetWindowTextW(g_hwnd, APP_TITLE);
     dpi = get_window_dpi(g_hwnd);
     g_scale = (float)dpi / 96.0f;
     apply_initial_size(g_hwnd, dpi);
@@ -1336,6 +1138,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     g_selected = 0;
     ShowWindow(g_hwnd, show);
     UpdateWindow(g_hwnd);
+    apply_window_look(g_hwnd);
     while (GetMessageW(&msg, 0, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
