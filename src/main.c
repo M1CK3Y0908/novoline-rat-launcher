@@ -1080,28 +1080,25 @@ static void draw_list_item(const DRAWITEMSTRUCT *d) {
 
 static void draw_play_icon(HDC dc, int cx, int cy, int size) {
     GpGraphics *graphics = 0;
+    GpSolidFill *fill = 0;
     GpPen *pen = 0;
-    GpPath *path = 0;
-    float s = size / 24.0f;
-    float x = (float)cx - size / 2.0f;
-    float y = (float)cy - size / 2.0f;
-    float p0x = x + 7.0f * s, p0y = y + 4.8f * s;
-    float p1x = x + 19.0f * s, p1y = y + 12.0f * s;
-    float p2x = x + 7.0f * s, p2y = y + 19.2f * s;
+    GpPointF p[3];
+    float height = (float)size;
+    float width = height * 0.866f;
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
-        GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
-        GdipSetPenLineJoin(pen, GpLineJoinRound);
-        if (GdipCreatePath(GpFillModeWinding, &path) == 0) {
-            GdipAddPathLine(path, p0x, p0y, p1x, p1y);
-            GdipAddPathLine(path, p1x, p1y, p2x, p2y);
-            GdipAddPathLine(path, p2x, p2y, p0x, p0y);
-            GdipClosePathFigure(path);
-            GdipDrawPath(graphics, pen, path);
-            GdipDeletePath(path);
+    p[0].X = (float)cx - width / 2.0f; p[0].Y = (float)cy - height / 2.0f;
+    p[1].X = (float)cx - width / 2.0f; p[1].Y = (float)cy + height / 2.0f;
+    p[2].X = (float)cx + width / 2.0f; p[2].Y = (float)cy;
+    if (GdipCreateSolidFill((ARGB)0xFF3FBF5F, &fill) == 0) {
+        GdipFillPolygon(graphics, (GpBrush *)fill, p, 3, GpFillModeWinding);
+        if (GdipCreatePen1((ARGB)0xFF1E5E34, 1.4f, GpUnitPixel, &pen) == 0) {
+            GdipDrawLine(graphics, pen, p[0].X, p[0].Y, p[1].X, p[1].Y);
+            GdipDrawLine(graphics, pen, p[1].X, p[1].Y, p[2].X, p[2].Y);
+            GdipDrawLine(graphics, pen, p[2].X, p[2].Y, p[0].X, p[0].Y);
+            GdipDeletePen(pen);
         }
-        GdipDeletePen(pen);
+        GdipDeleteBrush((GpBrush *)fill);
     }
     GdipDeleteGraphics(graphics);
 }
@@ -1197,11 +1194,16 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
         }
         if (iconKind) {
             SIZE textSize;
+            TEXTMETRICW tm;
             int iconSize = (int)(20 * g_scale + 0.5f);
             int gap = (int)(8 * g_scale + 0.5f);
             int total, left, cy;
             RECT tr;
             GetTextExtentPoint32W(d->hDC, label, (int)wcslen(label), &textSize);
+            if (iconKind == 1 && GetTextMetricsW(d->hDC, &tm)) {
+                int capHeight = tm.tmAscent - tm.tmInternalLeading;
+                if (capHeight >= 8) iconSize = capHeight;
+            }
             total = iconSize + gap + textSize.cx;
             left = d->rcItem.left + ((d->rcItem.right - d->rcItem.left) - total) / 2;
             cy = (d->rcItem.top + d->rcItem.bottom) / 2;

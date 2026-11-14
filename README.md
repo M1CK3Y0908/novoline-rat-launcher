@@ -35,7 +35,7 @@ dist\NovolineLauncher.exe
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
 - `Settings`：显示游戏目录、Java Path、内存和离线档案；可打开游戏目录、浏览选择 Java、调整内存。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
-- 启动按钮带图标：使用 Win32_Icon_Set 的浅紫色描边图标（#D8D2F0，2px 圆头描边）；启动/重试为播放三角，等待为旋转圆弧，关闭为电源符号。
+- 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待为旋转圆弧，关闭为电源符号，二者使用 Win32_Icon_Set 的 #D8D2F0 描边样式。
 - 启动按钮上方有 5px 状态色条：平时隐藏；点击启动后显示主题色流光并显示 `Waiting for the game`，检测到游戏窗口后变为绿色呼吸效果和 `Running`，失败为红色流光。
 - `Log out`：切换为离线档案 `Player`。
 - `Launch`：
