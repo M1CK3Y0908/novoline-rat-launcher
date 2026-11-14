@@ -17,7 +17,7 @@ dist\NovolineLauncher.exe
 - **界面本身**只使用 Windows 自带的 `kernel32 / user32 / gdi32 / gdiplus / shell32 / advapi32 / dwmapi` 等系统组件。
 - 不依赖 VC++ Redistributable，不依赖 .NET，不依赖任何第三方 DLL，也没有外部皮肤/图片/字体文件。
 - 程序内嵌了图标、Manifest 和版本信息。
-- 启动 Minecraft 时仍然需要本机安装 Java（游戏本身的要求），启动器会自动探测 Java 8 / 17 / 21 等常见安装位置。
+- 启动 Minecraft 时如果目标 `java` 目录不存在运行时，启动器会先下载 Java 8。
 
 ## 功能
 
@@ -36,14 +36,17 @@ dist\NovolineLauncher.exe
 - `Settings`：显示游戏目录、Java、内存和离线档案；可打开游戏目录、自动探测 Java、调整内存。
 - `Log out`：切换为离线档案 `Player`。
 - `Launch`：
-  - 自动查找 `%APPDATA%\.minecraft`；
-  - 优先使用已安装的 `Novoline` 版本，否则使用最近修改的版本；
-  - 自动解析版本 JSON、库文件、启动参数和资源索引；
-  - 使用系统自带 `tar.exe` 解压 native 库；
-  - 使用离线 UUID / accessToken=0 启动，不读取、不保存任何微软账号密码；
-  - 启动日志：`%APPDATA%\NovolineLauncher\launcher.log` 和 `game.log`。
+  - 默认游戏目录：`C:\M1CK3Y\novoline.rat`
+  - 默认 Java 目录：`C:\M1CK3Y\novoline.rat\java`
+  - 首次启动先检查 `java\bin\java.exe`；缺失时从 GitHub 下载 `java/jdk1.8.0_202` 并解压到 `java`；
+  - 根据 `versions.rat` 中当前选中版本的 `jar` / `json` 地址，下载到 `versions\<版本 ID>\`；
+  - 从 `libraries.minecraft.net` 补齐版本依赖，并将 native 解压到 `natives\<版本 ID>\`；
+  - 自动解析版本 JSON、启动参数和资源索引；
+  - 通过 `java.exe` 命令行启动 Minecraft；
+  - 使用离线 UUID / accessToken=0，不读取、不保存任何微软账号密码；
+  - 启动日志：`C:\M1CK3Y\novoline.rat\logs\launcher.log` 和 `game.log`。
 
-> 这是启动器，不包含 Minecraft 游戏本体。请先在本机安装 Minecraft（以及 Java），再点击 Launch。
+> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 运行库下载包较大，首次启动会明显慢于后续启动。
 
 ## 文件结构
 
@@ -52,7 +55,7 @@ NovolineLauncher.exe          编译后的主程序
 dist\NovolineLauncher.exe     可直接分发的单文件副本
 src\                           C 源码
   main.c                       Win32 窗口、绘制、交互
-  launcher.c / launcher.h      Minecraft / Java 探测与启动
+  launcher.c / launcher.h      Java / 版本下载与 Minecraft 启动
   versions.c / versions.h      远程 versions.rat 下载与解析
   winhttp_flat.h               WinHTTP API 声明
   json.c / json.h              轻量 JSON 解析

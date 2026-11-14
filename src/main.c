@@ -37,6 +37,7 @@
 #define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
 #define WM_APP_VERSIONS_DONE (WM_APP + 18)
+#define WM_APP_LAUNCH_STATUS (WM_APP + 19)
 
 #define RGB_BG        RGB(33, 36, 41)
 #define RGB_SEP       RGB(43, 46, 53)
@@ -132,6 +133,38 @@ typedef struct LaunchResult {
 } LaunchResult;
 
 static LaunchResult g_launchResult;
+static LaunchRequest g_launchRequest;
+
+static void launch_status(const WCHAR *text) {
+    WCHAR *copy;
+    size_t n;
+    if (!text || !text[0]) return;
+    n = wcslen(text) + 1;
+    copy = (WCHAR *)malloc(n * sizeof(WCHAR));
+    if (!copy) return;
+    memcpy(copy, text, n * sizeof(WCHAR));
+    if (!PostMessageW(g_hwnd, WM_APP_LAUNCH_STATUS, 0, (LPARAM)copy)) free(copy);
+}
+
+static void remote_version_id(const VersionEntry *entry, WCHAR *out, int cap) {
+    const WCHAR *name;
+    int i = 0;
+    if (!out || cap <= 0) return;
+    out[0] = 0;
+    if (!entry || !entry->jarUrl[0]) {
+        scopy(out, L"Novoline", cap);
+        return;
+    }
+    name = wcsrchr(entry->jarUrl, L'/');
+    name = name ? name + 1 : entry->jarUrl;
+    while (name[i] && i < cap - 1) {
+        out[i] = name[i];
+        i++;
+    }
+    out[i] = 0;
+    if (i > 4 && !wcscmp(out + i - 4, L".jar")) out[i - 4] = 0;
+    if (!out[0]) scopy(out, L"Novoline", cap);
+}
 
 /* ---------- GDI+ helpers ---------- */
 
@@ -767,8 +800,9 @@ static DWORD WINAPI versions_thread(LPVOID param) {
 }
 
 static DWORD WINAPI launch_thread(LPVOID param) {
-    LaunchResult *r = (LaunchResult *)param;
-    r->ok = launch_minecraft(&g_settings, r->message, 512);
+    LaunchResult *r = &g_launchResult;
+    (void)param;
+    r->ok = launch_minecraft(&g_launchRequest, r->message, 512, launch_status);
     PostMessageW(g_hwnd, WM_APP_LAUNCH_DONE, (WPARAM)r->ok, 0);
     return 0;
 }
@@ -776,11 +810,20 @@ static DWORD WINAPI launch_thread(LPVOID param) {
 static void start_launch(void) {
     HANDLE th;
     if (g_launching) return;
+    if (g_versions.count <= 0) {
+        set_toast(L"No version is loaded.", 3500, 1);
+        return;
+    }
     g_launching = 1;
-    sync_page_controls();
     ZeroMemory(&g_launchResult, sizeof(g_launchResult));
-    set_toast(L"Preparing Minecraft...", 10000, 0);
-    th = CreateThread(0, 0, launch_thread, &g_launchResult, 0, 0);
+    ZeroMemory(&g_launchRequest, sizeof(g_launchRequest));
+    g_launchRequest.settings = g_settings;
+    remote_version_id(&g_versions.items[g_selected], g_launchRequest.versionId, 128);
+    scopy(g_launchRequest.jarUrl, g_versions.items[g_selected].jarUrl, PATH_CAP);
+    scopy(g_launchRequest.jsonUrl, g_versions.items[g_selected].jsonUrl, PATH_CAP);
+    sync_page_controls();
+    set_toast(L"Preparing Minecraft...", 30000, 0);
+    th = CreateThread(0, 8 * 1024 * 1024, launch_thread, &g_launchResult, 0, 0);
     if (th) CloseHandle(th);
     else {
         g_launching = 0;
@@ -1053,6 +1096,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
             } else if (wp == 2) {
                 update_hover_states();
+            }
+            return 0;
+        case WM_APP_LAUNCH_STATUS:
+            if (lp) {
+                set_toast((const WCHAR *)lp, 30000, 0);
+                free((void *)lp);
             }
             return 0;
         case WM_APP_LAUNCH_DONE:

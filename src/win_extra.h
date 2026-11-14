@@ -23,6 +23,8 @@ HINSTANCE WINAPI ShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile,
                                LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd);
 BOOL WINAPI SetProcessDPIAware(void);
 
+int WINAPI SHCreateDirectoryExW(HWND, LPCWSTR, const SECURITY_ATTRIBUTES *);
+
 UINT WINAPI PrivateExtractIconsW(LPCWSTR, int, int, int, HICON *, UINT *, UINT, UINT);
 
 #endif

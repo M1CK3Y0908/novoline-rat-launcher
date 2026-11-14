@@ -9,6 +9,7 @@
 #include <wchar.h>
 #include <stdint.h>
 #include "launcher.h"
+#include "winhttp_flat.h"
 #include "json.h"
 
 #ifndef CSIDL_APPDATA
@@ -21,6 +22,10 @@
 #define CP_CAP 32768
 #define CMD_CAP 65536
 #define NATIVE_CAP 32
+#define DEFAULT_GAME_DIR L"C:\\M1CK3Y\\novoline.rat"
+#define DEFAULT_JAVA_DIR L"C:\\M1CK3Y\\novoline.rat\\java"
+#define JAVA_ARCHIVE_URL L"https://github.com/M1CK3Y0908/novoline-rat-versions/archive/refs/heads/main.zip"
+#define JAVA_ARCHIVE_PREFIX L"novoline-rat-versions-main/java/jdk1.8.0_202"
 
 typedef struct LaunchPlan {
     WCHAR version[128];
@@ -105,6 +110,10 @@ static void ensure_dir(const WCHAR *path) {
     if (path && path[0]) CreateDirectoryW(path, 0);
 }
 
+static void ensure_dir_tree(const WCHAR *path) {
+    if (path && path[0]) SHCreateDirectoryExW(0, path, 0);
+}
+
 static void path_join(WCHAR *out, int cap, const WCHAR *a, const WCHAR *b) {
     int n;
     if (!out || cap <= 0) return;
@@ -170,11 +179,10 @@ static void sanitize_username(WCHAR *name, int cap) {
 }
 
 void settings_defaults(LauncherSettings *s) {
-    WCHAR appdata[PATH_CAP];
     if (!s) return;
     ZeroMemory(s, sizeof(*s));
-    get_env_path(L"APPDATA", appdata, PATH_CAP, L".");
-    path_join(s->gameDir, PATH_CAP, appdata, L".minecraft");
+    scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
+    scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
     scopy(s->username, L"Player", 64);
     s->memoryMB = 2048;
 }
@@ -272,6 +280,10 @@ void settings_load(LauncherSettings *s) {
         }
     }
     free(wide);
+    /* Migrate the old AppData\.minecraft default to the portable game directory. */
+    if (!s->gameDir[0] || wcsstr(s->gameDir, L"AppData\\Roaming\\.minecraft"))
+        scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
+    if (!s->javaPath[0]) scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
     if (s->memoryMB < 512) s->memoryMB = 2048;
     if (!s->username[0]) scopy(s->username, L"Player", 64);
 }
@@ -407,6 +419,9 @@ int detect_java(LauncherSettings *s, int requiredMajor) {
     if (!s) return 0;
     if (requiredMajor <= 0) requiredMajor = 8;
     ZeroMemory(&best, sizeof(best));
+    if (s->javaPath[0] && dir_exists(s->javaPath)) {
+        java_candidate_consider(&best, s->javaPath, requiredMajor);
+    }
     if (s->javaPath[0] && file_exists(s->javaPath)) {
         WCHAR dir[PATH_CAP];
         scopy(dir, s->javaPath, PATH_CAP);
@@ -998,15 +1013,13 @@ static int run_tar_extract(const WCHAR *jar, const WCHAR *dest) {
     return ok;
 }
 
-static int prepare_natives(LaunchPlan *p, const WCHAR *localAppData) {
+static int prepare_natives(LaunchPlan *p, const WCHAR *gameDir) {
     WCHAR base[PATH_CAP], dir[PATH_CAP];
     int i, ok = 0;
-    path_join(base, PATH_CAP, localAppData, L"NovolineLauncher");
-    ensure_dir(base);
-    path_join(base, PATH_CAP, base, L"natives");
-    ensure_dir(base);
+    path_join(base, PATH_CAP, gameDir, L"natives");
+    ensure_dir_tree(base);
     path_join(dir, PATH_CAP, base, p->version);
-    ensure_dir(dir);
+    ensure_dir_tree(dir);
     scopy(p->nativesDir, dir, PATH_CAP);
     for (i = 0; i < p->nativeCount; i++) {
         if (run_tar_extract(p->nativeJars[i], dir)) ok++;
@@ -1014,13 +1027,15 @@ static int prepare_natives(LaunchPlan *p, const WCHAR *localAppData) {
     return ok;
 }
 
-static void write_launch_log(const WCHAR *text) {
+static void write_launch_log(const WCHAR *gameDir, const WCHAR *text) {
     WCHAR path[PATH_CAP];
     char *utf8;
     DWORD written = 0;
     HANDLE h;
     if (!text) return;
-    path_join(path, PATH_CAP, settings_app_dir(), L"launcher.log");
+    path_join(path, PATH_CAP, gameDir, L"logs");
+    ensure_dir_tree(path);
+    path_join(path, PATH_CAP, path, L"launcher.log");
     utf8 = wide_to_utf8_alloc(text);
     if (!utf8) return;
     h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -1031,38 +1046,381 @@ static void write_launch_log(const WCHAR *text) {
     free(utf8);
 }
 
+static void set_download_error(WCHAR *error, int cap, const WCHAR *prefix, DWORD code) {
+    if (!error || cap <= 0) return;
+    wsprintfW(error, L"%s (error %lu)", prefix, code);
+    error[cap - 1] = 0;
+}
+
+static int split_https(const WCHAR *url, WCHAR *host, int hostCap, WCHAR *path, int pathCap) {
+    const WCHAR *p;
+    int n = 0;
+    if (!url || wcsncmp(url, L"https://", 8)) return 0;
+    p = url + 8;
+    while (*p && *p != L'/' && n < hostCap - 1) host[n++] = *p++;
+    host[n] = 0;
+    if (!host[0] || *p != L'/') return 0;
+    scopy(path, p, pathCap);
+    return 1;
+}
+
+static int download_file(const WCHAR *url, const WCHAR *dest, const WCHAR *label,
+                         LaunchStatusFn status, WCHAR *error, int errorCap) {
+    HINTERNET session = 0, connect = 0, request = 0;
+    HANDLE file = INVALID_HANDLE_VALUE;
+    WCHAR host[256], path[2048], part[PATH_CAP], dir[PATH_CAP], msg[320];
+    DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    DWORD httpStatus = 0, statusSize = sizeof(httpStatus);
+    DWORD contentLength = 0, lengthSize = sizeof(contentLength);
+    DWORD total = 0, lastPercent = (DWORD)-1;
+    BYTE buffer[65536];
+    int ok = 0;
+    if (!split_https(url, host, 256, path, 2048)) {
+        scopy(error, L"Invalid HTTPS download URL.", errorCap);
+        return 0;
+    }
+    scopy(part, dest, PATH_CAP);
+    sappend(part, L".part", PATH_CAP);
+    scopy(dir, dest, PATH_CAP);
+    path_dirname(dir);
+    ensure_dir_tree(dir);
+    if (status) status(label);
+    session = WinHttpOpen(L"NovolineLauncher/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) {
+        set_download_error(error, errorCap, L"Could not initialize WinHTTP", GetLastError());
+        goto cleanup;
+    }
+    WinHttpSetTimeouts(session, 10000, 10000, 30000, 60000);
+    connect = WinHttpConnect(session, host, 443, 0);
+    if (!connect) {
+        set_download_error(error, errorCap, L"Could not connect to GitHub", GetLastError());
+        goto cleanup;
+    }
+    request = WinHttpOpenRequest(connect, L"GET", path, 0, WINHTTP_NO_REFERER,
+                                 WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!request) {
+        set_download_error(error, errorCap, L"Could not create download request", GetLastError());
+        goto cleanup;
+    }
+    WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
+    if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
+        set_download_error(error, errorCap, L"Could not send download request", GetLastError());
+        goto cleanup;
+    }
+    if (!WinHttpReceiveResponse(request, 0)) {
+        set_download_error(error, errorCap, L"Could not receive download response", GetLastError());
+        goto cleanup;
+    }
+    if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             0, &httpStatus, &statusSize, 0)) {
+        set_download_error(error, errorCap, L"Could not read download status", GetLastError());
+        goto cleanup;
+    }
+    if (httpStatus != 200) {
+        wsprintfW(error, L"HTTP download returned status %lu.", httpStatus);
+        error[errorCap - 1] = 0;
+        goto cleanup;
+    }
+    WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                        0, &contentLength, &lengthSize, 0);
+    file = CreateFileW(part, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) {
+        set_download_error(error, errorCap, L"Could not create download file", GetLastError());
+        goto cleanup;
+    }
+    for (;;) {
+        DWORD available = 0;
+        if (!WinHttpQueryDataAvailable(request, &available)) {
+            set_download_error(error, errorCap, L"Could not read download data", GetLastError());
+            goto cleanup;
+        }
+        if (available == 0) break;
+        while (available > 0) {
+            DWORD chunk = available > sizeof(buffer) ? (DWORD)sizeof(buffer) : available;
+            DWORD got = 0, written = 0;
+            if (!WinHttpReadData(request, buffer, chunk, &got)) {
+                set_download_error(error, errorCap, L"Could not read download body", GetLastError());
+                goto cleanup;
+            }
+            if (got == 0) break;
+            if (!WriteFile(file, buffer, got, &written, 0) || written != got) {
+                set_download_error(error, errorCap, L"Could not write download file", GetLastError());
+                goto cleanup;
+            }
+            total += got;
+            available -= got;
+            if (status && contentLength > 0) {
+                DWORD percent = (DWORD)(((uint64_t)total * 100) / contentLength);
+                if (percent != lastPercent && (percent % 2 == 0 || percent >= 99)) {
+                    wsprintfW(msg, L"%s %lu%%", label, percent);
+                    status(msg);
+                    lastPercent = percent;
+                }
+            }
+        }
+    }
+    if (file != INVALID_HANDLE_VALUE) {
+        CloseHandle(file);
+        file = INVALID_HANDLE_VALUE;
+    }
+    if (!MoveFileExW(part, dest, MOVEFILE_REPLACE_EXISTING)) {
+        set_download_error(error, errorCap, L"Could not finish download", GetLastError());
+        goto cleanup;
+    }
+    ok = 1;
+
+cleanup:
+    if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+    if (request) WinHttpCloseHandle(request);
+    if (connect) WinHttpCloseHandle(connect);
+    if (session) WinHttpCloseHandle(session);
+    if (!ok) DeleteFileW(part);
+    return ok;
+}
+
+static int run_java_extract(const WCHAR *archive, const WCHAR *dest) {
+    WCHAR sysDir[MAX_PATH];
+    WCHAR tarPath[PATH_CAP];
+    WCHAR cmd[PATH_CAP * 4];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD waitResult;
+    int ok = 0;
+    if (!file_exists(archive) || !dir_exists(dest)) return 0;
+    if (!GetSystemDirectoryW(sysDir, MAX_PATH)) return 0;
+    path_join(tarPath, PATH_CAP, sysDir, L"tar.exe");
+    if (!file_exists(tarPath)) return 0;
+    cmd[0] = 0;
+    scopy(cmd, L"\"", PATH_CAP * 4);
+    sappend(cmd, tarPath, PATH_CAP * 4);
+    sappend(cmd, L"\" -xf \"", PATH_CAP * 4);
+    sappend(cmd, archive, PATH_CAP * 4);
+    sappend(cmd, L"\" -C \"", PATH_CAP * 4);
+    sappend(cmd, dest, PATH_CAP * 4);
+    sappend(cmd, L"\" --strip-components=3 \"", PATH_CAP * 4);
+    sappend(cmd, JAVA_ARCHIVE_PREFIX, PATH_CAP * 4);
+    sappend(cmd, L"\"", PATH_CAP * 4);
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+    if (!CreateProcessW(tarPath, cmd, 0, 0, FALSE, CREATE_NO_WINDOW, 0, dest, &si, &pi))
+        return 0;
+    waitResult = WaitForSingleObject(pi.hProcess, 300000);
+    if (waitResult == WAIT_OBJECT_0) {
+        DWORD code = 1;
+        if (GetExitCodeProcess(pi.hProcess, &code) && code == 0) ok = 1;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return ok;
+}
+
+static void java_root_path(const LauncherSettings *s, WCHAR *root, int cap) {
+    WCHAR name[64];
+    if (!s || !root) return;
+    if (dir_exists(s->javaPath)) {
+        scopy(root, s->javaPath, cap);
+        return;
+    }
+    if (file_exists(s->javaPath)) {
+        scopy(root, s->javaPath, cap);
+        path_dirname(root);
+        path_filename(root, name, 64);
+        if (!_wcsicmp(name, L"bin")) path_dirname(root);
+        return;
+    }
+    scopy(root, s->javaPath[0] ? s->javaPath : DEFAULT_JAVA_DIR, cap);
+}
+
+static int ensure_java_runtime(const LaunchRequest *request, WCHAR *error, int errorCap,
+                               LaunchStatusFn status) {
+    LauncherSettings *s = (LauncherSettings *)&request->settings;
+    WCHAR root[PATH_CAP], exe[PATH_CAP], downloads[PATH_CAP], archive[PATH_CAP];
+    java_root_path(s, root, PATH_CAP);
+    if (!root[0]) {
+        scopy(error, L"Java path is empty.", errorCap);
+        return 0;
+    }
+    path_join(exe, PATH_CAP, root, L"bin\\java.exe");
+    if (file_exists(exe)) {
+        scopy(s->javaPath, root, PATH_CAP);
+        return 1;
+    }
+    ensure_dir_tree(s->gameDir);
+    path_join(downloads, PATH_CAP, s->gameDir, L"downloads");
+    ensure_dir_tree(downloads);
+    path_join(archive, PATH_CAP, downloads, L"java-runtime.zip");
+    if (!file_exists(archive)) {
+        if (!download_file(JAVA_ARCHIVE_URL, archive, L"Downloading Java runtime", status,
+                           error, errorCap))
+            return 0;
+    }
+    if (status) status(L"Extracting Java runtime...");
+    ensure_dir_tree(root);
+    if (!run_java_extract(archive, root) || !file_exists(exe)) {
+        scopy(error, L"Could not extract the Java runtime archive.", errorCap);
+        return 0;
+    }
+    DeleteFileW(archive);
+    scopy(s->javaPath, root, PATH_CAP);
+    return 1;
+}
+
+static int ensure_version_files(const LaunchRequest *request, WCHAR *versionId, int idCap,
+                                WCHAR *error, int errorCap, LaunchStatusFn status) {
+    const LauncherSettings *s = &request->settings;
+    WCHAR dir[PATH_CAP], jar[PATH_CAP], json[PATH_CAP], label[256];
+    int i, n;
+    if (!request->versionId[0] || !request->jarUrl[0] || !request->jsonUrl[0]) return 0;
+    n = 0;
+    for (i = 0; request->versionId[i] && n < idCap - 1; i++) {
+        WCHAR c = request->versionId[i];
+        if ((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+            (c >= L'0' && c <= L'9') || c == L'-' || c == L'_' || c == L'.') {
+            versionId[n++] = c;
+        } else {
+            versionId[n++] = L'_';
+        }
+    }
+    versionId[n] = 0;
+    if (!versionId[0]) scopy(versionId, L"Novoline", idCap);
+    ensure_dir_tree(s->gameDir);
+    path_join(dir, PATH_CAP, s->gameDir, L"versions");
+    ensure_dir(dir);
+    path_join(dir, PATH_CAP, dir, versionId);
+    ensure_dir(dir);
+    path_join(jar, PATH_CAP, dir, versionId);
+    sappend(jar, L".jar", PATH_CAP);
+    path_join(json, PATH_CAP, dir, versionId);
+    sappend(json, L".json", PATH_CAP);
+    if (!file_exists(jar)) {
+        scopy(label, L"Downloading version ", 256);
+        sappend(label, versionId, 256);
+        if (!download_file(request->jarUrl, jar, label, status, error, errorCap)) return 0;
+    }
+    if (!file_exists(json)) {
+        if (!download_file(request->jsonUrl, json, L"Downloading version metadata", status,
+                           error, errorCap))
+            return 0;
+    }
+    return 1;
+}
+
+static int ensure_libraries(const WCHAR *gameDir, const WCHAR *versionJson,
+                            LaunchStatusFn status, WCHAR *error, int errorCap) {
+    Json *root;
+    const Json *libs;
+    int i, count;
+    root = json_parse_file(versionJson);
+    if (!root) {
+        scopy(error, L"Could not read version metadata for libraries.", errorCap);
+        return 0;
+    }
+    libs = json_get(root, "libraries");
+    count = json_count(libs);
+    for (i = 0; i < count; i++) {
+        const Json *lib = json_at(libs, i);
+        const WCHAR *name;
+        const Json *natives;
+        WCHAR classifier[128], rel[512], dest[PATH_CAP], url[2048];
+        int j, k;
+        if (!json_is_object(lib) || !rules_allow(json_get(lib, "rules"))) continue;
+        name = json_get_string(lib, "name", 0);
+        if (!name) continue;
+        classifier[0] = 0;
+        natives = json_get(lib, "natives");
+        if (json_is_object(natives)) {
+            const WCHAR *win = json_get_string(natives, "windows", 0);
+            if (win) {
+                scopy(classifier, win, 128);
+                for (j = 0; classifier[j]; j++) {
+                    if (!wcsncmp(classifier + j, L"${arch}", 7)) {
+                        WCHAR tmp[128];
+                        scopy(tmp, classifier, 128);
+                        tmp[j] = 0;
+                        scopy(classifier, tmp, 128);
+                        sappend(classifier, L"64", 128);
+                        sappend(classifier, tmp + j + 7, 128);
+                        break;
+                    }
+                }
+            }
+        }
+        maven_to_path(name, classifier[0] ? classifier : 0, rel, 512);
+        path_join(dest, PATH_CAP, gameDir, L"libraries");
+        path_join(dest, PATH_CAP, dest, rel);
+        if (file_exists(dest)) continue;
+        scopy(url, L"https://libraries.minecraft.net/", 2048);
+        k = (int)wcslen(url);
+        for (j = 0; rel[j] && k < 2047; j++) {
+            url[k++] = rel[j] == L'\\' ? L'/' : rel[j];
+        }
+        url[k] = 0;
+        if (!download_file(url, dest, L"Downloading libraries", status, error, errorCap)) {
+            json_free(root);
+            return 0;
+        }
+    }
+    json_free(root);
+    return 1;
+}
+
 static void set_message(WCHAR *message, int cap, const WCHAR *text) {
     if (message && cap > 0) scopy(message, text, cap);
 }
 
-int launch_minecraft(LauncherSettings *s, WCHAR *message, int messageCap) {
+int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCap,
+                     LaunchStatusFn status) {
     LaunchPlan *plan;
+    LauncherSettings *s;
     WCHAR jsonPath[PATH_CAP];
     WCHAR versionId[128];
-    WCHAR appdata[PATH_CAP], localAppData[PATH_CAP];
-    WCHAR javaExe[PATH_CAP], javaDir[PATH_CAP];
+    WCHAR javaRoot[PATH_CAP], javaExe[PATH_CAP];
     WCHAR fullCp[CP_CAP];
     WCHAR assetsRoot[PATH_CAP], gameAssets[PATH_CAP];
     WCHAR uuid[64];
     WCHAR cmd[CMD_CAP];
     WCHAR token[TOKEN_LEN * 2];
-    WCHAR logPath[PATH_CAP];
     WCHAR gameLog[PATH_CAP];
     WCHAR *cmdHeap;
-    int i, required;
+    int i;
     int result = 0;
-    if (!s) return 0;
+    if (!request) return 0;
+    s = (LauncherSettings *)&request->settings;
     set_message(message, messageCap, L"Preparing Minecraft...");
     if (!s->gameDir[0]) {
         set_message(message, messageCap, L"No game directory is configured.");
         return 0;
     }
-    if (!detect_version(s, versionId, 128, jsonPath, PATH_CAP)) {
+    ensure_dir_tree(s->gameDir);
+    if (!ensure_java_runtime(request, message, messageCap, status)) return 0;
+    java_root_path(s, javaRoot, PATH_CAP);
+    path_join(javaExe, PATH_CAP, javaRoot, L"bin\\java.exe");
+    if (!file_exists(javaExe)) {
+        set_message(message, messageCap, L"Java runtime is missing after installation.");
+        return 0;
+    }
+    jsonPath[0] = 0;
+    if (request->jarUrl[0] && request->jsonUrl[0]) {
+        if (!ensure_version_files(request, versionId, 128, message, messageCap, status)) return 0;
+    } else if (!detect_version(s, versionId, 128, jsonPath, PATH_CAP)) {
         WCHAR text[PATH_CAP + 128];
         scopy(text, L"No Minecraft versions found in ", PATH_CAP + 128);
         sappend(text, s->gameDir, PATH_CAP + 128);
         set_message(message, messageCap, text);
         return 0;
+    }
+    {
+        WCHAR versionJson[PATH_CAP];
+        path_join(versionJson, PATH_CAP, s->gameDir, L"versions");
+        path_join(versionJson, PATH_CAP, versionJson, versionId);
+        path_join(versionJson, PATH_CAP, versionJson, versionId);
+        sappend(versionJson, L".json", PATH_CAP);
+        if (!ensure_libraries(s->gameDir, versionJson, status, message, messageCap)) return 0;
     }
     plan = (LaunchPlan *)calloc(1, sizeof(LaunchPlan));
     if (!plan) { set_message(message, messageCap, L"Out of memory."); return 0; }
@@ -1077,35 +1435,7 @@ int launch_minecraft(LauncherSettings *s, WCHAR *message, int messageCap) {
         if (plan->assets[0]) scopy(plan->assetIndex, plan->assets, 128);
         else scopy(plan->assetIndex, L"legacy", 128);
     }
-    required = plan->javaMajor > 0 ? plan->javaMajor : 8;
-    if (!s->javaPath[0] || !file_exists(s->javaPath)) {
-        if (!detect_java(s, required)) {
-            free(plan);
-            set_message(message, messageCap, L"Java was not found. Install Java 8 or newer, then try again.");
-            return 0;
-        }
-    } else {
-        WCHAR jd[PATH_CAP];
-        scopy(jd, s->javaPath, PATH_CAP);
-        path_dirname(jd);
-        path_dirname(jd);
-        {
-            int installed = read_release_major(jd);
-            if ((required >= 17 && installed > 0 && installed < required) ||
-                (required == 8 && installed > 8)) {
-                detect_java(s, required);
-            }
-        }
-    }
-    if (!s->javaPath[0] || !file_exists(s->javaPath)) {
-        free(plan);
-        set_message(message, messageCap, L"Java was not found. Install Java 8 or newer, then try again.");
-        return 0;
-    }
-    scopy(javaExe, s->javaPath, PATH_CAP);
-    path_dirname(javaExe);
-    path_join(javaExe, PATH_CAP, javaExe, L"java.exe");
-    if (!file_exists(javaExe)) scopy(javaExe, s->javaPath, PATH_CAP);
+    if (status) status(L"Starting Minecraft...");
     path_join(plan->versionJar, PATH_CAP, s->gameDir, L"versions");
     path_join(plan->versionJar, PATH_CAP, plan->versionJar, plan->jarId);
     path_join(plan->versionJar, PATH_CAP, plan->versionJar, plan->jarId);
@@ -1124,9 +1454,7 @@ int launch_minecraft(LauncherSettings *s, WCHAR *message, int messageCap) {
         sappend(fullCp, L";", CP_CAP);
         sappend(fullCp, plan->classpath, CP_CAP);
     }
-    get_env_path(L"APPDATA", appdata, PATH_CAP, L".");
-    get_env_path(L"LOCALAPPDATA", localAppData, PATH_CAP, appdata);
-    prepare_natives(plan, localAppData);
+    prepare_natives(plan, s->gameDir);
     path_join(assetsRoot, PATH_CAP, s->gameDir, L"assets");
     path_join(gameAssets, PATH_CAP, assetsRoot, L"virtual\\legacy");
     offline_uuid(s->username, uuid, 64);
@@ -1184,15 +1512,16 @@ int launch_minecraft(LauncherSettings *s, WCHAR *message, int messageCap) {
         sappend(header, s->gameDir, CMD_CAP + 512);
         sappend(header, L"\r\n\r\n", CMD_CAP + 512);
         sappend(header, cmdHeap, CMD_CAP + 512);
-        write_launch_log(header);
+        write_launch_log(s->gameDir, header);
     }
     {
         STARTUPINFOW si;
         PROCESS_INFORMATION pi;
         SECURITY_ATTRIBUTES sa;
         HANDLE gameLogHandle, nulHandle;
-        path_join(gameLog, PATH_CAP, settings_app_dir(), L"game.log");
-        path_join(logPath, PATH_CAP, settings_app_dir(), L"game.log");
+        path_join(gameLog, PATH_CAP, s->gameDir, L"logs");
+        ensure_dir_tree(gameLog);
+        path_join(gameLog, PATH_CAP, gameLog, L"game.log");
         sa.nLength = sizeof(sa);
         sa.lpSecurityDescriptor = 0;
         sa.bInheritHandle = TRUE;
