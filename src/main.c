@@ -537,13 +537,27 @@ static void draw_description(HDC dc, const Layout *l, const WCHAR *description) 
         n = (int)wcslen(line);
         while (n > 0 && (line[n - 1] == L'\r' || line[n - 1] == L' ')) line[--n] = 0;
         if (line[0]) {
-            if (line[0] == L'[' && line[1] == L'/' && line[2] == L']') {
+            if (line[0] == L'[' && line[1] && line[2] == L']') {
+                WCHAR prefix[4];
                 WCHAR *body = line + 3;
+                SIZE sz;
+                HGDIOBJ oldFont;
+                float bodyX;
+                prefix[0] = line[0];
+                prefix[1] = line[1];
+                prefix[2] = line[2];
+                prefix[3] = 0;
                 while (*body == L' ') body++;
-                draw_text(dc, L"[/]", l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
+                oldFont = SelectObject(dc, g_font24);
+                GetTextExtentPoint32W(dc, prefix, 3, &sz);
+                SelectObject(dc, oldFont);
+                bodyX = l->mainX + (float)sz.cx / g_scale;
+                draw_text(dc, prefix, l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
                           DT_LEFT | DT_TOP | DT_SINGLELINE);
-                draw_text(dc, body, l->mainX + 20, y, l->mainW - 20, 18, g_font24,
-                          RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+                if (*body) {
+                    draw_text(dc, body, bodyX, y, l->mainW - (bodyX - l->mainX), 18, g_font24,
+                              RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+                }
             } else {
                 draw_text(dc, line, l->mainX, y, l->mainW, 18, g_font24,
                           RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
