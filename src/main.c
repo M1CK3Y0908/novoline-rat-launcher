@@ -1122,6 +1122,23 @@ static void draw_description(HDC dc, const Layout *l, const WCHAR *description) 
         return;
     }
     scopy(buffer, description, VERSION_DESC_CAP);
+    {
+        WCHAR *src = buffer;
+        WCHAR *dst = buffer;
+        while (*src) {
+            if (src[0] == L'\\' && (src[1] == L'n' || src[1] == L'N')) {
+                *dst++ = L'\n';
+                src += 2;
+            } else if (src[0] == L'\\' && (src[1] == L'r' || src[1] == L'R')) {
+                src += 2;
+            } else if (src[0] == L'\r') {
+                src++;
+            } else {
+                *dst++ = *src++;
+            }
+        }
+        *dst = 0;
+    }
     p = buffer;
     while (*p && y < l->H - 44 && lines < 16) {
         WCHAR *end = wcschr(p, L'\n');
