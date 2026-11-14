@@ -35,6 +35,16 @@
 #define IDC_RESET_GAME 1009
 #define IDC_RESET_JAVA 1010
 #define IDC_SETTINGS_TAB 1011
+#define IDC_GAME_LABEL 1012
+#define IDC_GAME_VALUE 1013
+#define IDC_JAVA_LABEL 1014
+#define IDC_JAVA_VALUE 1015
+#define IDC_MEM_LABEL 1016
+#define IDC_MEM_MB 1017
+#define IDC_MEM_RANGE 1018
+#define IDC_PROFILE_LABEL 1019
+#define IDC_PROFILE_VALUE 1020
+#define IDC_PROFILE_VERSION 1021
 #define TCIF_TEXT_LOCAL 0x0001
 #define TCM_GETCURSEL_LOCAL 0x130B
 #define TCM_SETCURSEL_LOCAL 0x130C
@@ -101,8 +111,11 @@ static HWND g_resetJavaBtn;
 static HWND g_tab;
 static WNDPROC g_tabOldProc;
 static int g_settingsTab = 0;
+static HWND g_gameLabel, g_gameValue, g_javaLabel, g_javaValue;
+static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_profileVersion;
 static HWND g_memEdit;
 static HBRUSH g_editBrush;
+static HBRUSH g_panelBrush;
 static HWND g_hoverButton;
 static int g_listHover = -1;
 static HBRUSH g_listBrush;
@@ -708,6 +721,36 @@ static void create_controls(HWND hwnd) {
     g_memEdit = CreateWindowExW(0, L"EDIT", L"",
                                 WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_EDIT, inst, 0);
+    g_gameLabel = CreateWindowExW(0, L"STATIC", L"GAME PATH",
+                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_GAME_LABEL, inst, 0);
+    g_gameValue = CreateWindowExW(0, L"STATIC", L"",
+                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_GAME_VALUE, inst, 0);
+    g_javaLabel = CreateWindowExW(0, L"STATIC", L"JAVA PATH",
+                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_JAVA_LABEL, inst, 0);
+    g_javaValue = CreateWindowExW(0, L"STATIC", L"",
+                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_JAVA_VALUE, inst, 0);
+    g_memLabel = CreateWindowExW(0, L"STATIC", L"MEMORY",
+                                 WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_LABEL, inst, 0);
+    g_memMb = CreateWindowExW(0, L"STATIC", L"MB",
+                              WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_MB, inst, 0);
+    g_memRange = CreateWindowExW(0, L"STATIC", L"(1024 - 32768)",
+                                 WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_RANGE, inst, 0);
+    g_profileLabel = CreateWindowExW(0, L"STATIC", L"PROFILE",
+                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_LABEL, inst, 0);
+    g_profileValue = CreateWindowExW(0, L"STATIC", L"",
+                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_VALUE, inst, 0);
+    g_profileVersion = CreateWindowExW(0, L"STATIC", L"",
+                                       WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                       0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_VERSION, inst, 0);
     if (g_memEdit) {
         WCHAR memBuf[32];
         set_window_theme_none(g_memEdit);
@@ -740,6 +783,16 @@ static void apply_control_fonts(void) {
         if (controls[i]) SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font20, TRUE);
     }
     if (g_list) SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
+    if (g_gameLabel) SendMessageW(g_gameLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_javaLabel) SendMessageW(g_javaLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_memLabel) SendMessageW(g_memLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_memMb) SendMessageW(g_memMb, WM_SETFONT, (WPARAM)g_font22, TRUE);
+    if (g_memRange) SendMessageW(g_memRange, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_profileLabel) SendMessageW(g_profileLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_gameValue) SendMessageW(g_gameValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
+    if (g_javaValue) SendMessageW(g_javaValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
+    if (g_profileValue) SendMessageW(g_profileValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
+    if (g_profileVersion) SendMessageW(g_profileVersion, WM_SETFONT, (WPARAM)g_font16, TRUE);
 }
 
 static void layout_controls(void) {
@@ -794,6 +847,57 @@ static void layout_controls(void) {
                  (int)(l.memEdit.x * g_scale + 0.5f), (int)(l.memEdit.y * g_scale + 0.5f),
                  (int)(l.memEdit.w * g_scale + 0.5f), (int)(l.memEdit.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_gameLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(104 * g_scale + 0.5f),
+                 (int)((l.card.w - 144) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_gameValue, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(120 * g_scale + 0.5f),
+                 (int)((l.card.w - 144) * g_scale + 0.5f), (int)(20 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_javaLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(140 * g_scale + 0.5f),
+                 (int)((l.card.w - 144) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_javaValue, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(156 * g_scale + 0.5f),
+                 (int)((l.card.w - 144) * g_scale + 0.5f), (int)(20 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_memLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(104 * g_scale + 0.5f),
+                 (int)(220 * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_memMb, 0,
+                 (int)((l.card.x + 106) * g_scale + 0.5f), (int)(122 * g_scale + 0.5f),
+                 (int)(30 * g_scale + 0.5f), (int)(20 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_memRange, 0,
+                 (int)((l.card.x + 138) * g_scale + 0.5f), (int)(124 * g_scale + 0.5f),
+                 (int)(140 * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_profileLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(104 * g_scale + 0.5f),
+                 (int)(220 * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_profileValue, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(120 * g_scale + 0.5f),
+                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(20 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_profileVersion, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
+                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static void invalidate_settings_card(HWND hwnd) {
+    Layout l = make_layout();
+    RECT r;
+    r.left = (LONG)(l.card.x * g_scale);
+    r.top = (LONG)(l.card.y * g_scale);
+    r.right = (LONG)((l.card.x + l.card.w) * g_scale) + 1;
+    r.bottom = (LONG)((l.card.y + l.card.h) * g_scale) + 1;
+    InvalidateRect(hwnd, &r, FALSE);
+    if (g_tab) InvalidateRect(g_tab, 0, FALSE);
 }
 
 static void sync_page_controls(void) {
@@ -827,6 +931,16 @@ static void sync_page_controls(void) {
         ShowWindow(g_memEdit, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_memEdit, !g_launching);
     }
+    if (g_gameLabel) ShowWindow(g_gameLabel, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
+    if (g_gameValue) ShowWindow(g_gameValue, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
+    if (g_javaLabel) ShowWindow(g_javaLabel, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
+    if (g_javaValue) ShowWindow(g_javaValue, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
+    if (g_memLabel) ShowWindow(g_memLabel, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
+    if (g_memMb) ShowWindow(g_memMb, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
+    if (g_memRange) ShowWindow(g_memRange, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
+    if (g_profileLabel) ShowWindow(g_profileLabel, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+    if (g_profileValue) ShowWindow(g_profileValue, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+    if (g_profileVersion) ShowWindow(g_profileVersion, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
     if (g_resetGameBtn) {
         ShowWindow(g_resetGameBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_resetGameBtn, !g_launching);
@@ -852,8 +966,26 @@ static void draw_release_shapes(GpGraphics *g, const Layout *l) {
     (void)l;
 }
 
+static int system_panel_radius(void) {
+    typedef LONG (WINAPI *PFN_RtlGetVersion)(void *);
+    struct { ULONG size; ULONG major; ULONG minor; ULONG build; WCHAR platform[128]; WCHAR csd[128]; } ver;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+    PFN_RtlGetVersion fn;
+    if (!ntdll) return 0;
+    fn = (PFN_RtlGetVersion)GetProcAddress(ntdll, "RtlGetVersion");
+    ZeroMemory(&ver, sizeof(ver));
+    ver.size = sizeof(ver);
+    if (fn && fn(&ver) == 0 && ver.major >= 10 && ver.build >= 22000) {
+        FreeLibrary(ntdll);
+        return 10;
+    }
+    FreeLibrary(ntdll);
+    return 0;
+}
+
 static void draw_settings_shapes(GpGraphics *g, const Layout *l) {
-    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, l->card.y, l->card.w, l->card.h, 10, 1);
+    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, l->card.y, l->card.w, l->card.h,
+          system_panel_radius(), 1);
 }
 
 static COLORREF blend_rgb(COLORREF a, COLORREF b, float t) {
@@ -1006,38 +1138,10 @@ static void draw_texts(HDC dc, const Layout *l) {
             draw_description(dc, l, entry->description);
         }
     } else {
-        WCHAR profile[96];
         draw_text(dc, L"Settings", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        if (g_settingsTab == 0) {
-            draw_text(dc, L"GAME PATH", l->card.x + 8, 104, l->card.w - 144, 12, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            draw_text(dc, g_settings.gameDir, l->card.x + 8, 120, l->card.w - 144, 18, g_font22,
-                      RGB(197, 199, 205), DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
-            draw_text(dc, L"JAVA PATH", l->card.x + 8, 140, l->card.w - 144, 12, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
-                      l->card.x + 8, 156, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
-        } else if (g_settingsTab == 1) {
-            draw_text(dc, L"MEMORY", l->card.x + 8, 104, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            draw_text(dc, L"MB", l->card.x + 106, 122, 30, 18, g_font22, RGB(197, 199, 205),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            draw_text(dc, L"(1024 - 32768)", l->card.x + 138, 124, 140, 16, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        } else {
-            draw_text(dc, L"PROFILE", l->card.x + 8, 104, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            wsprintfW(profile, L"%s  (fixed)", g_settings.username);
-            draw_text(dc, profile, l->card.x + 8, 120, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-            draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
-                      l->card.x + 8, 142, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-        }
     }
 
 
@@ -1201,6 +1305,8 @@ static void start_launch(void) {
     InvalidateRect(g_hwnd, 0, FALSE);
 }
 
+static void refresh_settings_statics(void);
+
 static void browse_game_path(void) {
     BROWSEINFOW bi;
     WCHAR display[MAX_PATH];
@@ -1220,6 +1326,7 @@ static void browse_game_path(void) {
         scopy(g_settings.gameDir, path, PATH_CAP);
         settings_save(&g_settings);
         g_versionFound = detect_version(&g_settings, g_versionId, 128, versionJson, PATH_CAP);
+        refresh_settings_statics();
         InvalidateRect(g_hwnd, 0, FALSE);
     }
     CoTaskMemFree(pidl);
@@ -1244,6 +1351,7 @@ static void browse_java(void) {
         if (n > 4 && !_wcsicmp(path + n - 4, L"\\bin")) path[n - 4] = 0;
         scopy(g_settings.javaPath, path, PATH_CAP);
         settings_save(&g_settings);
+        refresh_settings_statics();
         InvalidateRect(g_hwnd, 0, FALSE);
     }
     CoTaskMemFree(pidl);
@@ -1267,17 +1375,32 @@ static void sync_memory_from_edit(int clamp) {
     }
 }
 
+static void refresh_settings_statics(void) {
+    WCHAR profile[128];
+    if (g_gameValue) SetWindowTextW(g_gameValue, g_settings.gameDir);
+    if (g_javaValue)
+        SetWindowTextW(g_javaValue, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder");
+    if (g_profileValue) {
+        wsprintfW(profile, L"%s  (fixed)", g_settings.username);
+        SetWindowTextW(g_profileValue, profile);
+    }
+    if (g_profileVersion)
+        SetWindowTextW(g_profileVersion, g_versionFound ? g_versionId : L"No Minecraft version found");
+}
+
 static void reset_game_path(void) {
     WCHAR versionJson[PATH_CAP];
     scopy(g_settings.gameDir, default_game_dir(), PATH_CAP);
     settings_save(&g_settings);
     g_versionFound = detect_version(&g_settings, g_versionId, 128, versionJson, PATH_CAP);
+    refresh_settings_statics();
     InvalidateRect(g_hwnd, 0, FALSE);
 }
 
 static void reset_java_path(void) {
     scopy(g_settings.javaPath, default_java_dir(), PATH_CAP);
     settings_save(&g_settings);
+    refresh_settings_statics();
     InvalidateRect(g_hwnd, 0, FALSE);
 }
 
@@ -1290,6 +1413,7 @@ static void handle_command(int id) {
             if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
             g_settingsTab = 0;
             g_page = 1;
+            refresh_settings_statics();
             if (g_memEdit) {
                 WCHAR memBuf[32];
                 wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
@@ -1587,9 +1711,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL &&
                 g_page == 1) {
                 int newTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
-                if (newTab >= 0) g_settingsTab = newTab;
-                sync_page_controls();
-                InvalidateRect(hwnd, 0, FALSE);
+                if (newTab >= 0 && newTab != g_settingsTab) {
+                    g_settingsTab = newTab;
+                    sync_page_controls();
+                    invalidate_settings_card(hwnd);
+                }
             }
             return 0;
         }
@@ -1625,14 +1751,26 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return (LRESULT)g_editBrush;
         }
         case WM_CTLCOLORSTATIC: {
-            if ((HWND)lp == g_memEdit) {
-                HDC hdc = (HDC)wp;
+            HWND ctl = (HWND)lp;
+            HDC hdc = (HDC)wp;
+            if (ctl == g_memEdit) {
                 SetTextColor(hdc, RGB(124, 128, 136));
                 SetBkColor(hdc, RGB(43, 47, 56));
                 if (!g_editBrush) g_editBrush = CreateSolidBrush(RGB(43, 47, 56));
                 return (LRESULT)g_editBrush;
             }
-            break;
+            if (ctl == g_gameLabel || ctl == g_javaLabel || ctl == g_memLabel ||
+                ctl == g_memRange || ctl == g_profileLabel || ctl == g_profileVersion) {
+                SetTextColor(hdc, RGB(126, 130, 138));
+            } else if (ctl == g_gameValue || ctl == g_javaValue || ctl == g_memMb ||
+                       ctl == g_profileValue) {
+                SetTextColor(hdc, RGB(197, 199, 205));
+            } else {
+                break;
+            }
+            SetBkColor(hdc, RGB_PANEL);
+            if (!g_panelBrush) g_panelBrush = CreateSolidBrush(RGB_PANEL);
+            return (LRESULT)g_panelBrush;
         }
         case WM_CTLCOLORLISTBOX: {
             HDC hdc = (HDC)wp;
@@ -1677,7 +1815,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
             g_settingsTab = 0;
             sync_page_controls();
-            InvalidateRect(hwnd, 0, FALSE);
+            invalidate_settings_card(hwnd);
             return 0;
         case WM_APP_LAUNCH_STATUS:
             if (lp) free((void *)lp);
@@ -1829,6 +1967,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
         WCHAR versionJson[PATH_CAP];
         g_versionFound = detect_version(&g_settings, g_versionId, 128, versionJson, PATH_CAP);
     }
+    refresh_settings_statics();
     g_selected = 0;
     ShowWindow(g_hwnd, show);
     UpdateWindow(g_hwnd);
