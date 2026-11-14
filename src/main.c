@@ -96,6 +96,34 @@ static int g_launchState = LAUNCH_IDLE;
 static DWORD g_launchStarted = 0;
 static HANDLE g_gameProcess = 0;
 static DWORD g_gamePid = 0;
+
+typedef struct GameWindowSearch {
+    DWORD pid;
+    int found;
+} GameWindowSearch;
+
+static BOOL CALLBACK find_game_window(HWND hwnd, LPARAM lp) {
+    GameWindowSearch *search = (GameWindowSearch *)lp;
+    DWORD pid = 0;
+    WCHAR title[8];
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid != search->pid || !IsWindowVisible(hwnd)) return TRUE;
+    title[0] = 0;
+    if (GetWindowTextW(hwnd, title, 8) > 0) {
+        search->found = 1;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static int game_window_exists(DWORD pid) {
+    GameWindowSearch search;
+    if (!pid) return 0;
+    search.pid = pid;
+    search.found = 0;
+    EnumWindows(find_game_window, (LPARAM)&search);
+    return search.found;
+}
 static LauncherSettings g_settings;
 static WCHAR g_versionId[128];
 static int g_versionFound = 0;
@@ -502,13 +530,14 @@ static void sync_page_controls(void) {
     if (g_launchBtn) {
         const WCHAR *label = L"Launch";
         if (g_page == 1) label = L"Done";
-        else if (g_launchState == LAUNCH_STARTING) label = L"Starting...";
+        else if (g_launchState == LAUNCH_STARTING) label = L"Waiting for the game";
         else if (g_launchState == LAUNCH_RUNNING)
             label = (g_hoverButton == g_launchBtn) ? L"Shutdown" : L"Running";
         else if (g_launchState == LAUNCH_FAILED) label = L"Retry";
         SetWindowTextW(g_launchBtn, label);
         EnableWindow(g_launchBtn, g_page == 1 || g_launchState == LAUNCH_RUNNING ||
-                                 (!g_launching && g_versions.count > 0));
+                                 (g_launchState != LAUNCH_STARTING && !g_launching &&
+                                  g_versions.count > 0));
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
     if (g_logoutBtn) EnableWindow(g_logoutBtn, !g_launching);
@@ -559,39 +588,50 @@ static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     COLORREF bright = RGB(142, 132, 232);
     float x, y, w, h;
     float i;
-    if (g_page != 0) return;
+    if (g_page != 0 || g_launchState == LAUNCH_IDLE) return;
     x = l->launchBtn.x;
-    y = l->launchBtn.y - 20.0f;
+    y = l->launchBtn.y - 15.0f;
     w = l->launchBtn.w;
-    h = 10.0f;
+    h = 5.0f;
     if (g_launchState == LAUNCH_RUNNING) {
+        static const unsigned char breathTab[32] = {
+            127,152,176,198,217,233,245,253,254,253,245,233,217,198,176,152,
+            127,102,78,56,37,21,9,1,0,1,9,21,37,56,78,102
+        };
+        int idx = (int)((GetTickCount() / 100) & 31);
+        float breath = 0.18f + 0.78f * ((float)breathTab[idx] / 255.0f);
         base = RGB(24, 62, 43);
         bright = RGB(92, 214, 139);
-    } else if (g_launchState == LAUNCH_FAILED) {
+        for (i = 0; i < w; i += 1.0f) {
+            float t = (w > 1.0f) ? (i / (w - 1.0f)) * 2.0f - 1.0f : 0.0f;
+            float edge = 1.0f - (t < 0.0f ? -t : t) * 0.55f;
+            float k = breath * edge;
+            fill_rect(g, blend_rgb(base, bright, k), x + i, y, 1.0f, h);
+        }
+        return;
+    }
+    if (g_launchState == LAUNCH_FAILED) {
         base = RGB(74, 28, 31);
         bright = RGB(224, 96, 96);
-    }
-    if (g_launchState == LAUNCH_IDLE) {
-        fill_rect(g, base, x, y, w, h);
-        return;
     }
     {
         int barW = (int)w;
         int head = barW > 0 ? (int)((GetTickCount() / 9) % (DWORD)barW) : 0;
+        int radius = barW / 3;
+        if (radius < 12) radius = 12;
         fill_rect(g, base, x, y, w, h);
         for (i = 0; i < w; i += 1.0f) {
             int px = (int)i;
             int dist = px > head ? px - head : head - px;
             float k;
             if (dist > barW / 2) dist = barW - dist;
-            if (dist >= 74) continue;
-            k = (1.0f - (float)dist / 74.0f);
+            if (dist >= radius) continue;
+            k = 1.0f - (float)dist / (float)radius;
             k = k * k * 0.95f;
             fill_rect(g, blend_rgb(base, bright, k), x + i, y, 1.0f, h);
         }
     }
 }
-
 static void draw_shapes(GpGraphics *g, const Layout *l) {
     fill_rect(g, RGB_BG, 0, 0, l->W, l->H);
     draw_sidebar(g, l);
@@ -859,7 +899,7 @@ static void start_launch(void) {
         shutdown_game();
         return;
     }
-    if (g_launching) return;
+    if (g_launchState == LAUNCH_STARTING || g_launching) return;
     if (g_versions.count <= 0) return;
     g_launching = 1;
     g_launchState = LAUNCH_STARTING;
@@ -1205,14 +1245,23 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_TIMER:
             if (wp == 2) {
                 update_hover_states();
-                if (g_launchState == LAUNCH_RUNNING && g_gameProcess) {
+                if ((g_launchState == LAUNCH_STARTING || g_launchState == LAUNCH_RUNNING) &&
+                    g_gameProcess) {
                     if (WaitForSingleObject(g_gameProcess, 0) == WAIT_OBJECT_0) {
                         DWORD code = 0;
                         GetExitCodeProcess(g_gameProcess, &code);
                         CloseHandle(g_gameProcess);
                         g_gameProcess = 0;
                         g_gamePid = 0;
-                        g_launchState = (code != 0) ? LAUNCH_FAILED : LAUNCH_IDLE;
+                        if (g_launchState == LAUNCH_STARTING)
+                            g_launchState = LAUNCH_FAILED;
+                        else
+                            g_launchState = (code != 0) ? LAUNCH_FAILED : LAUNCH_IDLE;
+                        sync_page_controls();
+                        InvalidateRect(hwnd, 0, FALSE);
+                    } else if (g_launchState == LAUNCH_STARTING &&
+                               game_window_exists(g_gamePid)) {
+                        g_launchState = LAUNCH_RUNNING;
                         sync_page_controls();
                     }
                 }
@@ -1232,7 +1281,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 g_gameProcess = g_launchResult.process;
                 g_gamePid = g_launchResult.pid;
                 g_launchStarted = GetTickCount();
-                g_launchState = LAUNCH_RUNNING;
+                g_launchState = LAUNCH_STARTING;
                 g_launchResult.process = 0;
                 settings_save(&g_settings);
             } else {
