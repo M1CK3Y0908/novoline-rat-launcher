@@ -27,4 +27,20 @@ int WINAPI SHCreateDirectoryExW(HWND, LPCWSTR, const SECURITY_ATTRIBUTES *);
 
 UINT WINAPI PrivateExtractIconsW(LPCWSTR, int, int, int, HICON *, UINT *, UINT, UINT);
 
+typedef void *LPITEMIDLIST;
+typedef const void *LPCITEMIDLIST;
+typedef struct BrowseInfoW {
+    HWND hwndOwner;
+    LPCITEMIDLIST pidlRoot;
+    LPWSTR pszDisplayName;
+    LPCWSTR lpszTitle;
+    UINT ulFlags;
+    void *lpfn;
+    LPARAM lParam;
+    int iImage;
+} BROWSEINFOW;
+LPITEMIDLIST WINAPI SHBrowseForFolderW(BROWSEINFOW *);
+BOOL WINAPI SHGetPathFromIDListW(LPCITEMIDLIST, LPWSTR);
+void WINAPI CoTaskMemFree(LPVOID);
+
 #endif

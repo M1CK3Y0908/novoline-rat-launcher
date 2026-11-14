@@ -17,7 +17,7 @@ dist\NovolineLauncher.exe
 - **界面本身**只使用 Windows 自带的 `kernel32 / user32 / gdi32 / gdiplus / shell32 / advapi32 / dwmapi` 等系统组件。
 - 不依赖 VC++ Redistributable，不依赖 .NET，不依赖任何第三方 DLL，也没有外部皮肤/图片/字体文件。
 - 程序内嵌了图标、Manifest 和版本信息。
-- 启动 Minecraft 时如果目标 `java` 目录不存在运行时，启动器会先下载 Java 8。
+- 启动 Minecraft 时如果目标 `java` 目录不存在运行时，启动器会先下载 Java 17。
 
 ## 功能
 
@@ -33,13 +33,13 @@ dist\NovolineLauncher.exe
 - 数据尚未返回时，左侧显示 `Loading...`，右侧显示加载提示；不会显示任何本地内置版本列表。
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
-- `Settings`：显示游戏目录、Java、内存和离线档案；可打开游戏目录、自动探测 Java、调整内存。
+- `Settings`：显示游戏目录、Java Path、内存和离线档案；可打开游戏目录、浏览选择 Java、调整内存。
 - `Log out`：切换为离线档案 `Player`。
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`
   - 默认 Java 目录：`C:\M1CK3Y\novoline.rat\java`
-  - 参考 PCL2 的 Java 版本选择：`1.8.8 + OptiFine` 固定使用 Java 8；目标 `java` 版本不兼容时，自动查找本机 Java 8，仍找不到则下载 8u202 JRE 到 `java8`；
-  - 只有版本需要 Java 17 时，才下载 `java.zip` 并解压到 `java`；
+  - 强制使用目标目录中的 Java 17：`java\bin\java.exe`；
+  - 目标 Java 缺失时，下载 `java.zip`，直接解压到 `java`，成功后删除压缩包；
   - 根据 `versions.rat` 中当前选中版本的 `jar` / `json` 地址，下载到 `versions\<版本 ID>\`；
   - 从 `libraries.minecraft.net` 补齐版本依赖，并将 native 解压到 `natives\<版本 ID>\`；
   - 自动解析版本 JSON、启动参数和资源索引；
@@ -47,7 +47,7 @@ dist\NovolineLauncher.exe
   - 使用离线 UUID / accessToken=0，不读取、不保存任何微软账号密码；
   - 启动日志：`C:\M1CK3Y\novoline.rat\logs\launcher.log` 和 `game.log`。
 
-> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 8 回退包约 37 MB，`java.zip` 约 40 MB；下载的压缩包在解压成功后会自动删除。
+> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。`java.zip` 约 40 MB，解压成功后会自动删除。
 
 ## 文件结构
 

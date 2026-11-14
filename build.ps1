@@ -23,6 +23,7 @@ $libs = @(
     '-lgdi32',
     '-ladvapi32',
     '-lwinhttp',
+    '-lole32',
     '-lkernel32'
 )
 

@@ -25,7 +25,6 @@
 #define DEFAULT_GAME_DIR L"C:\\M1CK3Y\\novoline.rat"
 #define DEFAULT_JAVA_DIR L"C:\\M1CK3Y\\novoline.rat\\java"
 #define JAVA_ARCHIVE_URL L"https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/java.zip"
-#define JAVA8_ARCHIVE_URL L"https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/jdk8u202-b08/OpenJDK8U-jre_x64_windows_hotspot_8u202b08.zip"
 
 typedef struct LaunchPlan {
     WCHAR version[128];
@@ -1235,12 +1234,6 @@ static void java_root_path(const LauncherSettings *s, WCHAR *root, int cap) {
     scopy(root, s->javaPath[0] ? s->javaPath : DEFAULT_JAVA_DIR, cap);
 }
 
-static int java_major_ok(int major, int required) {
-    if (required <= 0) required = 8;
-    if (required <= 8) return major == 8;
-    return major >= required;
-}
-
 static int install_java_archive(const LaunchRequest *request, const WCHAR *url, const WCHAR *name,
                                 const WCHAR *dest, int strip, WCHAR *error, int errorCap,
                                 LaunchStatusFn status) {
@@ -1266,39 +1259,27 @@ static int install_java_archive(const LaunchRequest *request, const WCHAR *url, 
     return 1;
 }
 
-static int ensure_java_runtime(const LaunchRequest *request, int required,
+static int ensure_java_runtime(const LaunchRequest *request,
                                WCHAR *error, int errorCap, LaunchStatusFn status) {
     LauncherSettings *s = (LauncherSettings *)&request->settings;
-    WCHAR root[PATH_CAP], exe[PATH_CAP], fallback[PATH_CAP];
-    int major = 0;
-    java_root_path(s, root, PATH_CAP);
-    if (root[0]) {
-        path_join(exe, PATH_CAP, root, L"bin\\java.exe");
-        if (file_exists(exe)) {
-            major = read_release_major(root);
-            if (major <= 0) major = 8;
-            if (java_major_ok(major, required)) {
-                scopy(s->javaPath, root, PATH_CAP);
-                return 1;
-            }
-        }
-    }
-    /* PCL2-style selection: use an installed Java matching the version requirement. */
-    if (detect_java(s, required)) {
-        java_root_path(s, root, PATH_CAP);
-        path_join(exe, PATH_CAP, root, L"bin\\java.exe");
-        if (file_exists(exe)) return 1;
-    }
-    if (required <= 8) {
-        if (root[0] && file_exists(exe))
-            path_join(fallback, PATH_CAP, s->gameDir, L"java8");
-        else
-            scopy(fallback, root, PATH_CAP);
-        if (!install_java_archive(request, JAVA8_ARCHIVE_URL, L"java8.zip", fallback, 1,
-                                  error, errorCap, status))
-            return 0;
-        scopy(s->javaPath, fallback, PATH_CAP);
+    WCHAR root[PATH_CAP], exe[PATH_CAP];
+    if (s->javaPath[0] && file_exists(s->javaPath)) {
+        /* The user picked java.exe directly. */
         return 1;
+    }
+    if (s->javaPath[0] && dir_exists(s->javaPath)) {
+        scopy(root, s->javaPath, PATH_CAP);
+    } else {
+        scopy(root, DEFAULT_JAVA_DIR, PATH_CAP);
+    }
+    path_join(exe, PATH_CAP, root, L"bin\\java.exe");
+    if (file_exists(exe)) {
+        scopy(s->javaPath, root, PATH_CAP);
+        return 1;
+    }
+    if (s->javaPath[0] && wcscmp(s->javaPath, DEFAULT_JAVA_DIR)) {
+        scopy(error, L"java.exe was not found at the selected Java path.", errorCap);
+        return 0;
     }
     if (!install_java_archive(request, JAVA_ARCHIVE_URL, L"java.zip", root, 0,
                               error, errorCap, status))
@@ -1424,7 +1405,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
     WCHAR token[TOKEN_LEN * 2];
     WCHAR gameLog[PATH_CAP];
     WCHAR *cmdHeap;
-    int i, required, javaMajor;
+    int i, javaMajor;
     int result = 0;
     if (!request) return 0;
     s = (LauncherSettings *)&request->settings;
@@ -1465,8 +1446,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         if (plan->assets[0]) scopy(plan->assetIndex, plan->assets, 128);
         else scopy(plan->assetIndex, L"legacy", 128);
     }
-    required = plan->javaMajor > 0 ? plan->javaMajor : 8;
-    if (!ensure_java_runtime(request, required, message, messageCap, status)) {
+    if (!ensure_java_runtime(request, message, messageCap, status)) {
         free(plan);
         return 0;
     }
@@ -1478,7 +1458,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         return 0;
     }
     javaMajor = read_release_major(javaRoot);
-    if (javaMajor <= 0) javaMajor = required;
+    if (javaMajor <= 0) javaMajor = 17;
     if (status) {
         WCHAR jmsg[128];
         wsprintfW(jmsg, L"Using Java %d...", javaMajor);
@@ -1503,6 +1483,10 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         sappend(fullCp, L";", CP_CAP);
         sappend(fullCp, plan->classpath, CP_CAP);
     }
+    for (i = 0; i < plan->nativeCount; i++) {
+        sappend(fullCp, L";", CP_CAP);
+        sappend(fullCp, plan->nativeJars[i], CP_CAP);
+    }
     prepare_natives(plan, s->gameDir);
     path_join(assetsRoot, PATH_CAP, s->gameDir, L"assets");
     path_join(gameAssets, PATH_CAP, assetsRoot, L"virtual\\legacy");
@@ -1523,7 +1507,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         sappend(cmd, L" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8", CMD_CAP);
         if (javaMajor >= 18) sappend(cmd, L" -Dfile.encoding=COMPAT", CMD_CAP);
     }
-    sappend(cmd, L" -Dlog4j2.formatMsgNoLookups=true -cp \"", CMD_CAP);
+    sappend(cmd, L" -cp \"", CMD_CAP);
     sappend(cmd, fullCp, CMD_CAP);
     sappend(cmd, L"\" ", CMD_CAP);
     sappend(cmd, plan->mainClass, CMD_CAP);

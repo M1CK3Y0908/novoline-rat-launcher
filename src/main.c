@@ -424,7 +424,7 @@ static void create_controls(HWND hwnd) {
     g_openBtn = CreateWindowExW(0, L"BUTTON", L"Open",
                                 WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OPEN, inst, 0);
-    g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Detect",
+    g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_DETECT, inst, 0);
     g_memMinusBtn = CreateWindowExW(0, L"BUTTON", L"-",
@@ -658,9 +658,9 @@ static void draw_texts(HDC dc, const Layout *l) {
         draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
-        draw_text(dc, L"JAVA RUNTIME", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"JAVA PATH", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Auto-detect when launching",
+        draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
                   l->card.x + 8, 122, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
@@ -843,6 +843,31 @@ static void open_game_folder(void) {
     if ((INT_PTR)r <= 32) set_toast(L"Could not open the game directory.", 4500, 1);
 }
 
+static void browse_java(void) {
+    BROWSEINFOW bi;
+    WCHAR display[MAX_PATH];
+    WCHAR path[PATH_CAP];
+    LPITEMIDLIST pidl;
+    ZeroMemory(&bi, sizeof(bi));
+    ZeroMemory(display, sizeof(display));
+    bi.hwndOwner = g_hwnd;
+    bi.pszDisplayName = display;
+    bi.lpszTitle = L"Select the Java folder (contains bin\\java.exe)";
+    bi.ulFlags = 0x00000001; /* BIF_RETURNONLYFSDIRS */
+    pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return;
+    path[0] = 0;
+    if (SHGetPathFromIDListW(pidl, path) && path[0]) {
+        int n = (int)wcslen(path);
+        if (n > 4 && !_wcsicmp(path + n - 4, L"\\bin")) path[n - 4] = 0;
+        scopy(g_settings.javaPath, path, PATH_CAP);
+        settings_save(&g_settings);
+        set_toast(L"Java path updated.", 3500, 0);
+        InvalidateRect(g_hwnd, 0, FALSE);
+    }
+    CoTaskMemFree(pidl);
+}
+
 static void handle_command(int id) {
     if (g_launching && id != IDC_LAUNCH) {
         set_toast(L"Please wait for Minecraft to start.", 2500, 0);
@@ -873,13 +898,7 @@ static void handle_command(int id) {
             open_game_folder();
             break;
         case IDC_DETECT:
-            if (detect_java(&g_settings, 8)) {
-                settings_save(&g_settings);
-                set_toast(L"Java runtime detected and saved.", 3500, 0);
-            } else {
-                set_toast(L"Java was not found. Install Java 8 or newer.", 5000, 1);
-            }
-            InvalidateRect(g_hwnd, 0, FALSE);
+            browse_java();
             break;
         case IDC_MEM_MINUS:
             if (g_settings.memoryMB > 1024) g_settings.memoryMB -= 512;
