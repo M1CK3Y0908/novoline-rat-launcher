@@ -852,10 +852,12 @@ static void apply_window_look(HWND hwnd) {
             (PFN_DwmSetWindowAttribute)GetProcAddress(dwm, "DwmSetWindowAttribute");
         if (setAttr) {
             BOOL dark = TRUE;
-            COLORREF caption = RGB(36, 37, 42);
-            COLORREF text = RGB(200, 202, 208);
-            COLORREF border = RGB(51, 54, 62);
+            COLORREF caption = RGB_BG;
+            COLORREF text = RGB_HEADLINE;
+            COLORREF border = RGB_BG;
             setAttr(hwnd, 20, &dark, sizeof(dark));
+            /* Windows 11+: make the native caption match the client background.
+               Windows 10 has no per-window caption color; it keeps the system accent. */
             setAttr(hwnd, 35, &caption, sizeof(caption));
             setAttr(hwnd, 36, &text, sizeof(text));
             setAttr(hwnd, 34, &border, sizeof(border));
