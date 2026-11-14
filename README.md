@@ -33,7 +33,7 @@ dist\NovolineLauncher.exe
 - 数据尚未返回时，左侧显示 `Loading...`，右侧显示加载提示；不会显示任何本地内置版本列表。
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
-- `Settings`：使用原生 `SysTabControl32` 分为 `Paths` / `Game` / `Profile` 三页；标签按文字宽度自动排列并左对齐，内容区域位于标签下方。内容由原生 `STATIC` / `EDIT` / `BUTTON` 控件组成。
+- `Settings`：使用原生 `SysTabControl32` 分为 `Paths` / `Game` / `Profile` 三页；标签按文字宽度自动排列并左对齐，鼠标悬停时显示高亮，内容区域位于标签下方。内容由原生 `STATIC` / `EDIT` / `BUTTON` 控件组成。
 - 设置内容卡片在 Windows 11 使用系统圆角，在 Windows 10 保持直角。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
 - 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待状态只显示文字，不显示加载图标；关闭为红色 #FF3B30 电源符号，按 80% 大小绘制并向上偏移。

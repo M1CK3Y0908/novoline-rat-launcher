@@ -52,6 +52,7 @@
 #define TCM_INSERTITEMW_LOCAL 0x133E
 #define TCM_GETITEMRECT_LOCAL 0x130A
 #define TCM_GETITEMCOUNT_LOCAL 0x1304
+#define TCM_HITTEST_LOCAL 0x130D
 #define NM_CUSTOMDRAW_LOCAL (-12)
 #define CDDS_PREPAINT_LOCAL 0x00000001
 #define CDDS_ITEMPREPAINT_LOCAL 0x00010001
@@ -111,6 +112,8 @@ static HWND g_resetJavaBtn;
 static HWND g_tab;
 static WNDPROC g_tabOldProc;
 static int g_settingsTab = 0;
+static int g_tabHover = -1;
+static int g_tabTracking = 0;
 static HWND g_gameLabel, g_gameValue, g_javaLabel, g_javaValue;
 static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_profileVersion;
 static HWND g_memEdit;
@@ -391,7 +394,7 @@ static Layout make_layout(void) {
     l.resetJavaBtn.y = 148.0f;
     l.resetJavaBtn.w = 54.0f;
     l.resetJavaBtn.h = 24.0f;
-    l.tab.x = l.card.x - 8.0f;
+    l.tab.x = l.card.x;
     l.tab.y = l.card.y + 8.0f;
     l.tab.w = 336.0f;
     l.tab.h = 30.0f;
@@ -486,9 +489,12 @@ static void overdraw_tabs(HWND hwnd, HDC dc) {
     for (i = 0; i < count; i++) {
         RECT r;
         RECT bottom;
-        COLORREF fill = (i == selected) ? RGB_PANEL : RGB_BG;
-        COLORREF border = (i == selected) ? RGB(72, 77, 90) : RGB_BORDER;
-        COLORREF text = (i == selected) ? RGB(232, 234, 239) : RGB(150, 154, 162);
+        int hovered = (i == g_tabHover);
+        COLORREF fill = (i == selected) ? RGB_PANEL : (hovered ? RGB(55, 60, 72) : RGB_BG);
+        COLORREF border = (i == selected) ? RGB(72, 77, 90) :
+                          (hovered ? RGB(82, 88, 102) : RGB_BORDER);
+        COLORREF text = (i == selected) ? RGB(232, 234, 239) :
+                        (hovered ? RGB(214, 217, 224) : RGB(150, 154, 162));
         HBRUSH brush;
         HPEN pen;
         HGDIOBJ oldPen;
@@ -560,6 +566,43 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         return 0;
     }
     if (msg == WM_NCPAINT) return 0;
+    if (msg == WM_MOUSEMOVE) {
+        POINT pt;
+        int count = (int)SendMessageW(hwnd, TCM_GETITEMCOUNT_LOCAL, 0, 0);
+        int hover = -1;
+        int i;
+        pt.x = (short)LOWORD(lp);
+        pt.y = (short)HIWORD(lp);
+        for (i = 0; i < count; i++) {
+            RECT r;
+            if (SendMessageW(hwnd, TCM_GETITEMRECT_LOCAL, (WPARAM)i, (LPARAM)&r) && PtInRect(&r, pt)) {
+                hover = i;
+                break;
+            }
+        }
+        if (hover != g_tabHover) {
+            g_tabHover = hover;
+            InvalidateRect(hwnd, 0, FALSE);
+        }
+        if (!g_tabTracking) {
+            struct { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } tme;
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = 0x00000002; /* TME_LEAVE */
+            tme.hwndTrack = hwnd;
+            tme.dwHoverTime = 0;
+            TrackMouseEvent((void *)&tme);
+            g_tabTracking = 1;
+        }
+        return 0;
+    }
+    if (msg == 0x02A3) { /* WM_MOUSELEAVE */
+        g_tabTracking = 0;
+        if (g_tabHover != -1) {
+            g_tabHover = -1;
+            InvalidateRect(hwnd, 0, FALSE);
+        }
+        return 0;
+    }
     return CallWindowProcW(g_tabOldProc, hwnd, msg, wp, lp);
 }
 
@@ -654,6 +697,21 @@ static void update_hover_states(void) {
     if (item != g_listHover) {
         g_listHover = item;
         InvalidateRect(g_list, 0, FALSE);
+    }
+    {
+        int tabHover = -1;
+        if (g_page == 1 && g_tab && IsWindowVisible(g_tab)) {
+            POINT cp = pt;
+            struct { POINT pt; UINT flags; } hit;
+            ScreenToClient(g_tab, &cp);
+            hit.pt = cp;
+            hit.flags = 0;
+            tabHover = (int)SendMessageW(g_tab, TCM_HITTEST_LOCAL, 0, (LPARAM)&hit);
+        }
+        if (tabHover != g_tabHover) {
+            g_tabHover = tabHover;
+            if (g_tab) InvalidateRect(g_tab, 0, FALSE);
+        }
     }
     if (target == g_hoverButton) return;
     old = g_hoverButton;
