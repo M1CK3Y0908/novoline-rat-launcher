@@ -49,7 +49,8 @@
 #define RGB_BUTTON    RGB(52, 56, 67)
 #define RGB_BUTTON_H  RGB(59, 64, 76)
 #define RGB_BUTTON_P  RGB(45, 49, 59)
-#define RGB_BTN_BORD  RGB(65, 69, 81)
+#define RGB_BTN_BORD  RGB(76, 81, 95)
+#define RGB_BTN_BORD_H RGB(88, 94, 110)
 #define RGB_GREEN     RGB(86, 200, 120)
 
 typedef struct TRect {
@@ -251,45 +252,45 @@ static Layout make_layout(void) {
     ZeroMemory(&l, sizeof(l));
     l.W = W;
     l.H = H;
-    l.mainX = 214.0f;
-    l.mainW = W - l.mainX - 8.0f;
+    l.mainX = 210.0f;
+    l.mainW = W - l.mainX - 10.0f;
     if (l.mainW < 80) l.mainW = 80;
     for (i = 0; i < 4; i++) {
-        l.items[i].x = 8.0f;
-        l.items[i].y = 8.0f + i * 22.0f;
-        l.items[i].w = 184.0f;
+        l.items[i].x = 10.0f;
+        l.items[i].y = 10.0f + i * 22.0f;
+        l.items[i].w = 180.0f;
         l.items[i].h = 22.0f;
     }
-    l.settingsBtn.x = 8.0f;
-    l.settingsBtn.y = H - 66.0f;
-    l.settingsBtn.w = 184.0f;
+    l.settingsBtn.x = 10.0f;
+    l.settingsBtn.y = H - 68.0f;
+    l.settingsBtn.w = 180.0f;
     l.settingsBtn.h = 24.0f;
-    l.logoutBtn.x = 8.0f;
-    l.logoutBtn.y = H - 36.0f;
-    l.logoutBtn.w = 184.0f;
+    l.logoutBtn.x = 10.0f;
+    l.logoutBtn.y = H - 34.0f;
+    l.logoutBtn.w = 180.0f;
     l.logoutBtn.h = 24.0f;
-    l.launchBtn.x = 214.0f;
-    l.launchBtn.y = H - 36.0f;
-    l.launchBtn.w = W - 214.0f - 8.0f;
+    l.launchBtn.x = 210.0f;
+    l.launchBtn.y = H - 34.0f;
+    l.launchBtn.w = W - 210.0f - 10.0f;
     l.launchBtn.h = 24.0f;
-    l.card.x = 214.0f;
+    l.card.x = 210.0f;
     l.card.y = 58.0f;
     l.card.w = l.mainW;
-    l.card.h = 210.0f;
-    l.openBtn.x = l.card.x + l.card.w - 72.0f;
-    l.openBtn.y = 76.0f;
+    l.card.h = 196.0f;
+    l.openBtn.x = l.card.x + l.card.w - 70.0f;
+    l.openBtn.y = 72.0f;
     l.openBtn.w = 60.0f;
     l.openBtn.h = 24.0f;
-    l.detectBtn.x = l.card.x + l.card.w - 72.0f;
-    l.detectBtn.y = 124.0f;
+    l.detectBtn.x = l.card.x + l.card.w - 70.0f;
+    l.detectBtn.y = 112.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
-    l.memMinus.x = l.card.x + l.card.w - 60.0f;
-    l.memMinus.y = 172.0f;
+    l.memMinus.x = l.card.x + l.card.w - 66.0f;
+    l.memMinus.y = 152.0f;
     l.memMinus.w = 26.0f;
     l.memMinus.h = 24.0f;
-    l.memPlus.x = l.card.x + l.card.w - 30.0f;
-    l.memPlus.y = 172.0f;
+    l.memPlus.x = l.card.x + l.card.w - 36.0f;
+    l.memPlus.y = 152.0f;
     l.memPlus.w = 26.0f;
     l.memPlus.h = 24.0f;
     return l;
@@ -583,7 +584,7 @@ static void draw_description(HDC dc, const Layout *l, const WCHAR *description) 
 static void draw_texts(HDC dc, const Layout *l) {
     if (g_versions.count == 0) {
         draw_text(dc, g_versionsLoading ? L"Loading..." : L"Failed to load",
-                  10, 8, 184, 18, g_font24, RGB(158, 161, 168),
+                  10, 10, 180, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 
@@ -619,30 +620,30 @@ static void draw_texts(HDC dc, const Layout *l) {
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"GAME DIRECTORY", l->card.x + 8, 68, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"GAME DIRECTORY", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 8, 84, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
-        draw_text(dc, L"JAVA RUNTIME", l->card.x + 8, 116, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"JAVA RUNTIME", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Auto-detect when launching",
-                  l->card.x + 8, 132, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
+                  l->card.x + 8, 122, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
-        draw_text(dc, L"MEMORY", l->card.x + 8, 164, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"MEMORY", l->card.x + 8, 146, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(memText, L"%d MB", g_settings.memoryMB);
-        draw_text(dc, memText, l->card.x + 8, 180, 140, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, memText, l->card.x + 8, 162, 140, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
-        draw_text(dc, L"PROFILE", l->card.x + 8, 212, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"PROFILE", l->card.x + 8, 186, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         wsprintfW(profile, L"%s  (offline)", g_settings.username);
-        draw_text(dc, profile, l->card.x + 8, 228, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, profile, l->card.x + 8, 202, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
-                  l->card.x + 8, 248, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
+                  l->card.x + 8, 224, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, L"Settings are saved automatically.", l->mainX, l->card.y + l->card.h + 8,
                   l->mainW, 16, g_font16, RGB(111, 115, 124), DT_LEFT | DT_SINGLELINE);
@@ -908,6 +909,7 @@ static void draw_list_item(const DRAWITEMSTRUCT *d) {
 static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     WCHAR label[128];
     COLORREF fill = RGB_BUTTON;
+    COLORREF border = RGB_BTN_BORD;
     COLORREF text = RGB(210, 212, 218);
     HBRUSH brush;
     RECT r;
@@ -917,17 +919,24 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     hovered = (g_hoverButton == d->hwndItem);
     if (d->itemState & ODS_DISABLED) {
         fill = RGB(43, 47, 56);
+        border = RGB(55, 59, 69);
         text = RGB(124, 128, 136);
     } else if (d->itemState & ODS_SELECTED) {
         fill = RGB_BUTTON_P;
+        border = RGB(62, 67, 79);
     } else if (d->CtlID == IDC_SETTINGS && g_page == 1) {
         fill = hovered ? RGB(64, 69, 82) : RGB(56, 61, 73);
+        if (hovered) border = RGB_BTN_BORD_H;
     } else if (hovered) {
         fill = RGB_BUTTON_H;
+        border = RGB_BTN_BORD_H;
         text = RGB(235, 237, 242);
     }
     brush = CreateSolidBrush(fill);
     FillRect(d->hDC, &d->rcItem, brush);
+    DeleteObject(brush);
+    brush = CreateSolidBrush(border);
+    FrameRect(d->hDC, &d->rcItem, brush);
     DeleteObject(brush);
     label[0] = 0;
     GetWindowTextW(d->hwndItem, label, 128);
