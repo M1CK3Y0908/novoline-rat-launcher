@@ -331,9 +331,9 @@ static Layout make_layout(void) {
     l.logoutBtn.w = 180.0f;
     l.logoutBtn.h = 24.0f;
     l.launchBtn.x = 210.0f;
-    l.launchBtn.y = H - 34.0f;
+    l.launchBtn.y = H - 40.0f;
     l.launchBtn.w = W - 210.0f - 10.0f;
-    l.launchBtn.h = 24.0f;
+    l.launchBtn.h = 30.0f;
     l.card.x = 210.0f;
     l.card.y = 58.0f;
     l.card.w = l.mainW;
@@ -1081,6 +1081,73 @@ static void draw_list_item(const DRAWITEMSTRUCT *d) {
     SelectObject(d->hDC, oldFont);
 }
 
+static void draw_play_icon(HDC dc, int cx, int cy, int size) {
+    int half = size / 2;
+    int width = (int)(size * 0.866f);
+    POINT p[3];
+    HBRUSH brush = CreateSolidBrush(RGB(66, 200, 120));
+    HPEN pen = CreatePen(PS_SOLID, (int)(2 * g_scale + 0.5f), RGB(20, 96, 52));
+    HGDIOBJ oldBrush = SelectObject(dc, brush);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    p[0].x = cx - width / 2; p[0].y = cy - half;
+    p[1].x = cx - width / 2; p[1].y = cy + half;
+    p[2].x = cx + width / 2; p[2].y = cy;
+    Polygon(dc, p, 3);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(brush);
+}
+
+static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
+    static const int dirX[8] = { 1000, 707, 0, -707, -1000, -707, 0, 707 };
+    static const int dirY[8] = { 0, 707, 1000, 707, 0, -707, -1000, -707 };
+    static const unsigned char levels[8] = { 255, 230, 205, 180, 155, 130, 105, 80 };
+    int radius = (int)(size * 0.34f);
+    int barW = (int)(size * 0.10f);
+    int barH = (int)(size * 0.30f);
+    int phase = (int)((GetTickCount() / 100) & 7);
+    int i;
+    if (barW < 2) barW = 2;
+    if (barH < 6) barH = 6;
+    for (i = 0; i < 8; i++) {
+        int x = cx + dirX[i] * radius / 1000;
+        int y = cy + dirY[i] * radius / 1000;
+        int level = levels[(i + phase) & 7];
+        HBRUSH brush = CreateSolidBrush(RGB(level, level, level));
+        RECT r;
+        r.left = x - barW / 2;
+        r.top = y - barH / 2;
+        r.right = r.left + barW;
+        r.bottom = r.top + barH;
+        FillRect(dc, &r, brush);
+        DeleteObject(brush);
+    }
+}
+
+static void draw_octagon_icon(HDC dc, int cx, int cy, int size) {
+    int half = size / 2;
+    int cut = (int)(size * 0.2929f);
+    POINT p[8];
+    HBRUSH brush = CreateSolidBrush(RGB(214, 64, 64));
+    HPEN pen = CreatePen(PS_SOLID, (int)(2 * g_scale + 0.5f), RGB(110, 22, 22));
+    HGDIOBJ oldBrush = SelectObject(dc, brush);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    p[0].x = cx - half + cut; p[0].y = cy - half;
+    p[1].x = cx + half - cut; p[1].y = cy - half;
+    p[2].x = cx + half; p[2].y = cy - half + cut;
+    p[3].x = cx + half; p[3].y = cy + half - cut;
+    p[4].x = cx + half - cut; p[4].y = cy + half;
+    p[5].x = cx - half + cut; p[5].y = cy + half;
+    p[6].x = cx - half; p[6].y = cy + half - cut;
+    p[7].x = cx - half; p[7].y = cy - half + cut;
+    Polygon(dc, p, 8);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(brush);
+}
+
 static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     WCHAR label[128];
     COLORREF fill = RGB_BUTTON;
@@ -1119,7 +1186,35 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
     SetBkMode(d->hDC, TRANSPARENT);
     SetTextColor(d->hDC, text);
     oldFont = SelectObject(d->hDC, g_font20);
-    DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    {
+        int iconKind = 0;
+        if (d->CtlID == IDC_LAUNCH && g_page == 0) {
+            if (g_launchState == LAUNCH_IDLE || g_launchState == LAUNCH_FAILED) iconKind = 1;
+            else if (g_launchState == LAUNCH_STARTING) iconKind = 2;
+            else if (g_launchState == LAUNCH_RUNNING) iconKind = 3;
+        }
+        if (iconKind) {
+            SIZE textSize;
+            int iconSize = (int)(24 * g_scale + 0.5f);
+            int gap = (int)(8 * g_scale + 0.5f);
+            int total, left, cy;
+            RECT tr;
+            GetTextExtentPoint32W(d->hDC, label, (int)wcslen(label), &textSize);
+            total = iconSize + gap + textSize.cx;
+            left = d->rcItem.left + ((d->rcItem.right - d->rcItem.left) - total) / 2;
+            cy = (d->rcItem.top + d->rcItem.bottom) / 2;
+            if (iconKind == 1) draw_play_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            else if (iconKind == 2) draw_spinner_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            else draw_octagon_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            tr.left = left + iconSize + gap;
+            tr.top = d->rcItem.top;
+            tr.right = d->rcItem.right;
+            tr.bottom = d->rcItem.bottom;
+            DrawTextW(d->hDC, label, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        } else {
+            DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        }
+    }
     SelectObject(d->hDC, oldFont);
 }
 
@@ -1266,6 +1361,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     }
                 }
                 if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
+                if (g_launchState == LAUNCH_STARTING && g_launchBtn)
+                    InvalidateRect(g_launchBtn, 0, FALSE);
             }
             return 0;
         case WM_APP_LAUNCH_STATUS:
