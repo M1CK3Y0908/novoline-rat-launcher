@@ -45,6 +45,17 @@
 #define IDC_PROFILE_LABEL 1019
 #define IDC_PROFILE_VALUE 1020
 #define IDC_PROFILE_VERSION 1021
+#define IDC_OFFLINE_LABEL 1022
+#define IDC_OFFLINE_EDIT 1023
+#define IDC_OFFLINE_BTN 1024
+#define IDC_MS_LABEL 1025
+#define IDC_MS_LOGIN_BTN 1026
+#define IDC_MS_CODE_EDIT 1027
+#define IDC_MS_COMPLETE_BTN 1028
+#define IDC_MS_LOGOUT_BTN 1029
+#define IDC_MS_STATUS 1030
+#define EM_SETCUEBANNER_LOCAL 0x1501
+#define WM_APP_MS_LOGIN_DONE (WM_APP + 21)
 #define TCIF_TEXT_LOCAL 0x0001
 #define TCM_GETCURSEL_LOCAL 0x130B
 #define TCM_SETCURSEL_LOCAL 0x130C
@@ -116,6 +127,11 @@ static int g_tabHover = -1;
 static int g_tabTracking = 0;
 static HWND g_gameLabel, g_gameValue, g_javaLabel, g_javaValue;
 static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_profileVersion;
+static HWND g_offlineLabel, g_offlineEdit, g_offlineBtn;
+static HWND g_msLabel, g_msLoginBtn, g_msCodeEdit, g_msCompleteBtn, g_msLogoutBtn, g_msStatus;
+static int g_msLoginRunning = 0;
+static WCHAR g_msLoginError[512];
+static WCHAR g_msCode[4096];
 static HWND g_memEdit;
 static HBRUSH g_editBrush;
 static HBRUSH g_panelBrush;
@@ -377,7 +393,7 @@ static Layout make_layout(void) {
     l.card.x = 210.0f;
     l.card.y = 58.0f;
     l.card.w = l.mainW;
-    l.card.h = 196.0f;
+    l.card.h = 230.0f;
     l.openBtn.x = l.card.x + l.card.w - 70.0f;
     l.openBtn.y = 110.0f;
     l.openBtn.w = 60.0f;
@@ -672,7 +688,9 @@ static void draw_tab_item(const DRAWITEMSTRUCT *d) {
 static int is_owner_button(HWND hwnd) {
     return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
                     hwnd == g_openBtn || hwnd == g_detectBtn ||
-                    hwnd == g_resetGameBtn || hwnd == g_resetJavaBtn);
+                    hwnd == g_resetGameBtn || hwnd == g_resetJavaBtn ||
+                    hwnd == g_offlineBtn || hwnd == g_msLoginBtn ||
+                    hwnd == g_msCompleteBtn || hwnd == g_msLogoutBtn);
 }
 
 static void update_hover_states(void) {
@@ -811,6 +829,43 @@ static void create_controls(HWND hwnd) {
     g_profileVersion = CreateWindowExW(0, L"STATIC", L"",
                                        WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
                                        0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_VERSION, inst, 0);
+    g_offlineLabel = CreateWindowExW(0, L"STATIC", L"OFFLINE NAME",
+                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_LABEL, inst, 0);
+    g_offlineEdit = CreateWindowExW(0, L"EDIT", L"",
+                                    WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_EDIT, inst, 0);
+    g_offlineBtn = CreateWindowExW(0, L"BUTTON", L"Offline",
+                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_BTN, inst, 0);
+    g_msLabel = CreateWindowExW(0, L"STATIC", L"MICROSOFT ACCOUNT",
+                                WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LABEL, inst, 0);
+    g_msLoginBtn = CreateWindowExW(0, L"BUTTON", L"Microsoft Login",
+                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGIN_BTN, inst, 0);
+    g_msLogoutBtn = CreateWindowExW(0, L"BUTTON", L"Log out",
+                                    WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGOUT_BTN, inst, 0);
+    g_msCodeEdit = CreateWindowExW(0, L"EDIT", L"",
+                                   WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_CODE_EDIT, inst, 0);
+    g_msCompleteBtn = CreateWindowExW(0, L"BUTTON", L"Complete",
+                                      WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_COMPLETE_BTN, inst, 0);
+    g_msStatus = CreateWindowExW(0, L"STATIC", L"",
+                                 WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
+                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_STATUS, inst, 0);
+    if (g_offlineEdit) {
+        set_window_theme_none(g_offlineEdit);
+        SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
+        SendMessageW(g_offlineEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+    }
+    if (g_msCodeEdit) {
+        set_window_theme_none(g_msCodeEdit);
+        SendMessageW(g_msCodeEdit, EM_SETCUEBANNER_LOCAL, TRUE, (LPARAM)L"Paste the redirect URL or code");
+        SendMessageW(g_msCodeEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+    }
     if (g_memEdit) {
         WCHAR memBuf[32];
         set_window_theme_none(g_memEdit);
@@ -853,6 +908,15 @@ static void apply_control_fonts(void) {
     if (g_javaValue) SendMessageW(g_javaValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_profileValue) SendMessageW(g_profileValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_profileVersion) SendMessageW(g_profileVersion, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_offlineLabel) SendMessageW(g_offlineLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_msLabel) SendMessageW(g_msLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_msStatus) SendMessageW(g_msStatus, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_offlineEdit) SendMessageW(g_offlineEdit, WM_SETFONT, (WPARAM)g_font20, TRUE);
+    if (g_msCodeEdit) SendMessageW(g_msCodeEdit, WM_SETFONT, (WPARAM)g_font20, TRUE);
+    if (g_offlineBtn) SendMessageW(g_offlineBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
+    if (g_msLoginBtn) SendMessageW(g_msLoginBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
+    if (g_msCompleteBtn) SendMessageW(g_msCompleteBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
+    if (g_msLogoutBtn) SendMessageW(g_msLogoutBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
     if (g_tab) SendMessageW(g_tab, WM_SETFONT, (WPARAM)g_font20, TRUE);
 }
 
@@ -943,6 +1007,42 @@ static void layout_controls(void) {
                  (int)((l.card.x + 8) * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
                  (int)((l.card.w - 16) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_offlineLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(144 * g_scale + 0.5f),
+                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_offlineEdit, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(160 * g_scale + 0.5f),
+                 (int)((l.card.w - 100) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_offlineBtn, 0,
+                 (int)((l.card.x + l.card.w - 84) * g_scale + 0.5f), (int)(160 * g_scale + 0.5f),
+                 (int)(76 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msLabel, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(190 * g_scale + 0.5f),
+                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msLoginBtn, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(206 * g_scale + 0.5f),
+                 (int)(130 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msLogoutBtn, 0,
+                 (int)((l.card.x + l.card.w - 84) * g_scale + 0.5f), (int)(206 * g_scale + 0.5f),
+                 (int)(76 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msCodeEdit, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(236 * g_scale + 0.5f),
+                 (int)((l.card.w - 100) * g_scale + 0.5f), (int)(22 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msCompleteBtn, 0,
+                 (int)((l.card.x + l.card.w - 84) * g_scale + 0.5f), (int)(236 * g_scale + 0.5f),
+                 (int)(76 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_msStatus, 0,
+                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(264 * g_scale + 0.5f),
+                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 static void invalidate_settings_card(HWND hwnd) {
@@ -966,7 +1066,7 @@ static void sync_page_controls(void) {
         else if (g_launchState == LAUNCH_FAILED) label = L"Retry";
         SetWindowTextW(g_launchBtn, label);
         EnableWindow(g_launchBtn, g_page == 1 || g_launchState == LAUNCH_RUNNING ||
-                                 (g_launchState != LAUNCH_STARTING && !g_launching &&
+                                 (g_launchState != LAUNCH_STARTING && !g_launching && !g_msLoginRunning &&
                                   g_versions.count > 0));
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
@@ -996,7 +1096,34 @@ static void sync_page_controls(void) {
     if (g_memRange) ShowWindow(g_memRange, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
     if (g_profileLabel) ShowWindow(g_profileLabel, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
     if (g_profileValue) ShowWindow(g_profileValue, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
-    if (g_profileVersion) ShowWindow(g_profileVersion, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+    if (g_profileVersion) ShowWindow(g_profileVersion, SW_HIDE);
+    if (g_offlineLabel) ShowWindow(g_offlineLabel, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+    if (g_offlineEdit) {
+        ShowWindow(g_offlineEdit, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_offlineEdit, !g_launching && !g_msLoginRunning);
+    }
+    if (g_offlineBtn) {
+        ShowWindow(g_offlineBtn, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_offlineBtn, !g_launching && !g_msLoginRunning);
+    }
+    if (g_msLabel) ShowWindow(g_msLabel, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+    if (g_msLoginBtn) {
+        ShowWindow(g_msLoginBtn, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_msLoginBtn, !g_launching && !g_msLoginRunning);
+    }
+    if (g_msLogoutBtn) {
+        ShowWindow(g_msLogoutBtn, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_msLogoutBtn, !g_launching && !g_msLoginRunning);
+    }
+    if (g_msCodeEdit) {
+        ShowWindow(g_msCodeEdit, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_msCodeEdit, !g_launching && !g_msLoginRunning);
+    }
+    if (g_msCompleteBtn) {
+        ShowWindow(g_msCompleteBtn, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_msCompleteBtn, !g_launching && !g_msLoginRunning);
+    }
+    if (g_msStatus) ShowWindow(g_msStatus, (g_page == 1 && g_settingsTab == 2) ? SW_SHOW : SW_HIDE);
     if (g_resetGameBtn) {
         ShowWindow(g_resetGameBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_resetGameBtn, !g_launching);
@@ -1006,7 +1133,9 @@ static void sync_page_controls(void) {
         EnableWindow(g_resetJavaBtn, !g_launching);
     }
     if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
-                        g_hoverButton == g_resetGameBtn || g_hoverButton == g_resetJavaBtn)) {
+                        g_hoverButton == g_resetGameBtn || g_hoverButton == g_resetJavaBtn ||
+                        g_hoverButton == g_offlineBtn || g_hoverButton == g_msLoginBtn ||
+                        g_hoverButton == g_msCompleteBtn || g_hoverButton == g_msLogoutBtn)) {
         g_hoverButton = 0;
     }
 }
@@ -1356,7 +1485,7 @@ static void start_launch(void) {
         shutdown_game();
         return;
     }
-    if (g_launchState == LAUNCH_STARTING || g_launching) return;
+    if (g_launchState == LAUNCH_STARTING || g_launching || g_msLoginRunning) return;
     if (g_versions.count <= 0) return;
     g_launching = 1;
     g_launchState = LAUNCH_STARTING;
@@ -1454,11 +1583,100 @@ static void refresh_settings_statics(void) {
     if (g_javaValue)
         SetWindowTextW(g_javaValue, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder");
     if (g_profileValue) {
-        wsprintfW(profile, L"%s  (fixed)", g_settings.username);
+        wsprintfW(profile, L"%s  (%s)", g_settings.username,
+                  g_settings.accountType == 1 ? L"Microsoft" : L"Offline");
         SetWindowTextW(g_profileValue, profile);
     }
+    if (g_offlineEdit) SetWindowTextW(g_offlineEdit, g_settings.username);
     if (g_profileVersion)
         SetWindowTextW(g_profileVersion, g_versionFound ? g_versionId : L"No Minecraft version found");
+    if (g_msStatus && !g_msLoginRunning)
+        SetWindowTextW(g_msStatus, g_settings.accountType == 1
+                                       ? L"Microsoft account connected."
+                                       : L"Offline account.");
+}
+
+static void set_offline_account(void) {
+    WCHAR name[64];
+    WCHAR *p;
+    int n;
+    if (!g_offlineEdit) return;
+    GetWindowTextW(g_offlineEdit, name, 64);
+    p = name;
+    while (*p == L' ' || *p == L'\t') p++;
+    n = (int)wcslen(p);
+    while (n > 0 && (p[n - 1] == L' ' || p[n - 1] == L'\t')) p[--n] = 0;
+    if (!p[0]) scopy(p, L"Player", 64 - (int)(p - name));
+    scopy(g_settings.username, p, 64);
+    g_settings.accountType = 0;
+    g_settings.uuid[0] = 0;
+    g_settings.accessToken[0] = 0;
+    g_settings.refreshToken[0] = 0;
+    g_settings.tokenExpires = 0;
+    settings_save(&g_settings);
+    refresh_settings_statics();
+    if (g_msStatus) SetWindowTextW(g_msStatus, L"Offline account set.");
+    InvalidateRect(g_hwnd, 0, FALSE);
+}
+
+static void clear_microsoft_account(void) {
+    g_settings.accountType = 0;
+    g_settings.uuid[0] = 0;
+    g_settings.accessToken[0] = 0;
+    g_settings.refreshToken[0] = 0;
+    g_settings.tokenExpires = 0;
+    scopy(g_settings.username, L"novoline_rat", 64);
+    settings_save(&g_settings);
+    refresh_settings_statics();
+    if (g_msStatus) SetWindowTextW(g_msStatus, L"Signed out.");
+    InvalidateRect(g_hwnd, 0, FALSE);
+}
+
+static void begin_microsoft_login(void) {
+    HINSTANCE result;
+    if (g_msLoginRunning) return;
+    result = ShellExecuteW(0, L"open", msa_authorization_url(), 0, 0, SW_SHOWNORMAL);
+    if ((INT_PTR)result <= 32) {
+        if (g_msStatus) SetWindowTextW(g_msStatus, L"Could not open the browser.");
+        return;
+    }
+    if (g_msStatus)
+        SetWindowTextW(g_msStatus, L"Browser opened. Paste the redirect URL or code, then Complete.");
+    if (g_msCodeEdit) {
+        SetFocus(g_msCodeEdit);
+        SendMessageW(g_msCodeEdit, EM_SETSEL, 0, -1);
+    }
+}
+
+static DWORD WINAPI ms_login_thread(LPVOID param) {
+    int ok;
+    (void)param;
+    g_msLoginError[0] = 0;
+    ok = msa_login_with_code(g_msCode, &g_settings, g_msLoginError, 512);
+    if (ok) settings_save(&g_settings);
+    PostMessageW(g_hwnd, WM_APP_MS_LOGIN_DONE, (WPARAM)ok, 0);
+    return 0;
+}
+
+static void complete_microsoft_login(void) {
+    HANDLE thread;
+    if (g_msLoginRunning || !g_msCodeEdit) return;
+    GetWindowTextW(g_msCodeEdit, g_msCode, 4096);
+    if (!g_msCode[0]) {
+        if (g_msStatus) SetWindowTextW(g_msStatus, L"Paste the authorization code first.");
+        return;
+    }
+    g_msLoginRunning = 1;
+    g_msLoginError[0] = 0;
+    if (g_msStatus) SetWindowTextW(g_msStatus, L"Signing in...");
+    sync_page_controls();
+    thread = CreateThread(0, 0, ms_login_thread, 0, 0, 0);
+    if (thread) CloseHandle(thread);
+    else {
+        g_msLoginRunning = 0;
+        if (g_msStatus) SetWindowTextW(g_msStatus, L"Could not start the login thread.");
+        sync_page_controls();
+    }
 }
 
 static void reset_game_path(void) {
@@ -1478,6 +1696,7 @@ static void reset_java_path(void) {
 }
 
 static void handle_command(int id) {
+    if (g_msLoginRunning) return;
     if (g_launching && id != IDC_LAUNCH) {
         return;
     }
@@ -1522,6 +1741,18 @@ static void handle_command(int id) {
             break;
         case IDC_RESET_JAVA:
             reset_java_path();
+            break;
+        case IDC_OFFLINE_BTN:
+            set_offline_account();
+            break;
+        case IDC_MS_LOGIN_BTN:
+            begin_microsoft_login();
+            break;
+        case IDC_MS_COMPLETE_BTN:
+            complete_microsoft_login();
+            break;
+        case IDC_MS_LOGOUT_BTN:
+            clear_microsoft_account();
             break;
         default:
             break;
@@ -1828,7 +2059,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 return (LRESULT)g_editBrush;
             }
             if (ctl == g_gameLabel || ctl == g_javaLabel || ctl == g_memLabel ||
-                ctl == g_memRange || ctl == g_profileLabel || ctl == g_profileVersion) {
+                ctl == g_memRange || ctl == g_profileLabel || ctl == g_profileVersion ||
+                ctl == g_offlineLabel || ctl == g_msLabel || ctl == g_msStatus) {
                 SetTextColor(hdc, RGB(126, 130, 138));
             } else if (ctl == g_gameValue || ctl == g_javaValue || ctl == g_memMb ||
                        ctl == g_profileValue) {
@@ -1878,6 +2110,22 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
             }
+            return 0;
+        case WM_APP_MS_LOGIN_DONE:
+            g_msLoginRunning = 0;
+            if (g_msCodeEdit) SetWindowTextW(g_msCodeEdit, L"");
+            if (wp) {
+                WCHAR msg[256];
+                refresh_settings_statics();
+                wsprintfW(msg, L"Signed in as %s.", g_settings.username);
+                if (g_msStatus) SetWindowTextW(g_msStatus, msg);
+                g_offlineEdit && SetWindowTextW(g_offlineEdit, g_settings.username);
+            } else {
+                if (g_msStatus)
+                    SetWindowTextW(g_msStatus, g_msLoginError[0] ? g_msLoginError : L"Microsoft login failed.");
+            }
+            sync_page_controls();
+            InvalidateRect(hwnd, 0, FALSE);
             return 0;
         case WM_APP_TAB_RESET:
             if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
