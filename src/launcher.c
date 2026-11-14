@@ -206,11 +206,7 @@ static void legacy_from_account(LauncherSettings *s, const AccountEntry *a) {
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
     ZeroMemory(s, sizeof(*s));
-    if (dir_exists(L"D:\\Minecraft\\.minecraft")) {
-        scopy(s->gameDir, L"D:\\Minecraft\\.minecraft", PATH_CAP);
-    } else {
-        scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    }
+    scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
     if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) {
         scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
     } else {
@@ -346,11 +342,8 @@ void settings_load(LauncherSettings *s) {
         }
     }
     free(wide);
-    /* Only choose a fallback when no game directory was saved. */
-    if (!s->gameDir[0]) {
-        if (dir_exists(L"D:\\Minecraft\\.minecraft")) scopy(s->gameDir, L"D:\\Minecraft\\.minecraft", PATH_CAP);
-        else scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    }
+    /* Only use the built-in default when no game directory was saved. */
+    if (!s->gameDir[0]) scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
     if (!s->javaPath[0]) {
         if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
         else scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
