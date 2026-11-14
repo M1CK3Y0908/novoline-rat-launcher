@@ -1622,10 +1622,23 @@ static void auth_error_from_body(const char *body, int status, WCHAR *error, int
     const WCHAR *desc = 0;
     root = body ? json_parse_utf8(body, (int)strlen(body)) : 0;
     if (root) {
+        int xerr = json_get_int(root, "XErr", 0);
+        const WCHAR *message = json_get_string(root, "Message", 0);
         desc = json_get_string(root, "error_description", 0);
         if (!desc) desc = json_get_string(root, "error", 0);
         if (desc && desc[0]) {
             scopy(error, desc, errorCap);
+            json_free(root);
+            return;
+        }
+        if (xerr || (message && message[0])) {
+            if (xerr && message && message[0])
+                wsprintfW(error, L"Xbox Live error %d: %s", xerr, message);
+            else if (xerr)
+                wsprintfW(error, L"Xbox Live error %d.", xerr);
+            else
+                scopy(error, message, errorCap);
+            error[errorCap - 1] = 0;
             json_free(root);
             return;
         }
@@ -1684,7 +1697,7 @@ static int oauth_token_request(const WCHAR *code, int refresh, WCHAR *accessOut,
                 codeEnc, redirectEnc, scopeEnc);
     }
     if (!https_request_text(L"https://login.live.com/oauth20_token.srf", L"POST",
-                            L"Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\n",
+                            L"Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\nAccept-Language: en-US,en;q=0.5\r\nX-Requested-With: XMLHttpRequest\r\n",
                             body, (int)strlen(body), &response, &responseLen, &status,
                             error, errorCap))
         goto cleanup;
@@ -1811,7 +1824,8 @@ static int msa_finish_login(const WCHAR *oauthAccess, const WCHAR *oauthRefresh,
             goto cleanup;
     }
     if (status < 200 || status >= 300) {
-        auth_error_from_body(response, status, error, errorCap);
+        if (status == 404) scopy(error, L"This Microsoft account has no Minecraft profile.", errorCap);
+        else auth_error_from_body(response, status, error, errorCap);
         goto cleanup;
     }
     {
@@ -1839,7 +1853,7 @@ cleanup:
 }
 
 const WCHAR *msa_authorization_url(void) {
-    return L"https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_id=00000000402b5328&response_type=code&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&response_mode=query&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL";
+    return L"https://login.live.com/oauth20_authorize.srf?client_id=00000000402b5328&response_type=code&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL";
 }
 
 int msa_login_with_code(const WCHAR *code, LauncherSettings *s, WCHAR *error, int errorCap) {
