@@ -331,9 +331,9 @@ static Layout make_layout(void) {
     l.logoutBtn.w = 180.0f;
     l.logoutBtn.h = 24.0f;
     l.launchBtn.x = 210.0f;
-    l.launchBtn.y = H - 40.0f;
+    l.launchBtn.y = H - 34.0f;
     l.launchBtn.w = W - 210.0f - 10.0f;
-    l.launchBtn.h = 30.0f;
+    l.launchBtn.h = 24.0f;
     l.card.x = 210.0f;
     l.card.y = 58.0f;
     l.card.w = l.mainW;
@@ -1103,25 +1103,32 @@ static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
     static const int dirX[8] = { 1000, 707, 0, -707, -1000, -707, 0, 707 };
     static const int dirY[8] = { 0, 707, 1000, 707, 0, -707, -1000, -707 };
     static const unsigned char levels[8] = { 255, 230, 205, 180, 155, 130, 105, 80 };
-    int radius = (int)(size * 0.34f);
-    int barW = (int)(size * 0.10f);
-    int barH = (int)(size * 0.30f);
+    int inner = (int)(size * 0.18f);
+    int outer = (int)(size * 0.44f);
+    int penWidth = (int)(size * 0.12f);
     int phase = (int)((GetTickCount() / 100) & 7);
     int i;
-    if (barW < 2) barW = 2;
-    if (barH < 6) barH = 6;
+    if (penWidth < 2) penWidth = 2;
     for (i = 0; i < 8; i++) {
-        int x = cx + dirX[i] * radius / 1000;
-        int y = cy + dirY[i] * radius / 1000;
         int level = levels[(i + phase) & 7];
-        HBRUSH brush = CreateSolidBrush(RGB(level, level, level));
-        RECT r;
-        r.left = x - barW / 2;
-        r.top = y - barH / 2;
-        r.right = r.left + barW;
-        r.bottom = r.top + barH;
-        FillRect(dc, &r, brush);
-        DeleteObject(brush);
+        int x1 = cx + dirX[i] * inner / 1000;
+        int y1 = cy + dirY[i] * inner / 1000;
+        int x2 = cx + dirX[i] * outer / 1000;
+        int y2 = cy + dirY[i] * outer / 1000;
+        LOGBRUSH lb;
+        HPEN pen;
+        HGDIOBJ oldPen;
+        lb.lbStyle = BS_SOLID;
+        lb.lbColor = RGB(level, level, level);
+        lb.lbHatch = 0;
+        pen = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND,
+                           penWidth, &lb, 0, 0);
+        if (!pen) pen = CreatePen(PS_SOLID, penWidth, RGB(level, level, level));
+        oldPen = SelectObject(dc, pen);
+        MoveToEx(dc, x1, y1, 0);
+        LineTo(dc, x2, y2);
+        SelectObject(dc, oldPen);
+        DeleteObject(pen);
     }
 }
 
@@ -1195,7 +1202,7 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
         }
         if (iconKind) {
             SIZE textSize;
-            int iconSize = (int)(24 * g_scale + 0.5f);
+            int iconSize = (int)(20 * g_scale + 0.5f);
             int gap = (int)(8 * g_scale + 0.5f);
             int total, left, cy;
             RECT tr;
