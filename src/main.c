@@ -990,6 +990,16 @@ static void create_controls(HWND hwnd) {
     g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"Remove",
                                          WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                          0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_REMOVE, inst, 0);
+    {
+        HWND buttons[] = {
+            g_settingsBtn, g_logoutBtn, g_launchBtn, g_openBtn, g_detectBtn,
+            g_resetGameBtn, g_resetJavaBtn, g_offlineBtn, g_msLoginBtn,
+            g_msLogoutBtn, g_msCompleteBtn, g_accountUseBtn, g_accountRemoveBtn
+        };
+        int i;
+        for (i = 0; i < (int)(sizeof(buttons) / sizeof(buttons[0])); i++)
+            install_native_button(buttons[i]);
+    }
     if (g_offlineEdit) {
         set_window_theme_none(g_offlineEdit);
         SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
