@@ -31,8 +31,7 @@
 #define IDC_LAUNCH     1004
 #define IDC_OPEN       1005
 #define IDC_DETECT     1006
-#define IDC_MEM_MINUS  1007
-#define IDC_MEM_PLUS   1008
+#define IDC_MEM_EDIT   1007
 #define DESIGN_W 584.0f
 #define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
@@ -65,7 +64,8 @@ typedef struct Layout {
     TRect logoutBtn;
     TRect launchBtn;
     TRect card;
-    TRect openBtn, detectBtn, memMinus, memPlus;
+    TRect openBtn, detectBtn;
+    TRect memEdit;
     float mainX, mainW;
 } Layout;
 
@@ -77,8 +77,8 @@ static HWND g_logoutBtn;
 static HWND g_launchBtn;
 static HWND g_openBtn;
 static HWND g_detectBtn;
-static HWND g_memMinusBtn;
-static HWND g_memPlusBtn;
+static HWND g_memEdit;
+static HBRUSH g_editBrush;
 static HWND g_hoverButton;
 static int g_listHover = -1;
 static HBRUSH g_listBrush;
@@ -88,10 +88,15 @@ static int g_clientW = 0, g_clientH = 0;
 static int g_page = 0;
 static int g_selected = 0;
 static int g_launching = 0;
+#define LAUNCH_IDLE     0
+#define LAUNCH_STARTING 1
+#define LAUNCH_RUNNING  2
+#define LAUNCH_FAILED   3
+static int g_launchState = LAUNCH_IDLE;
+static DWORD g_launchStarted = 0;
+static HANDLE g_gameProcess = 0;
+static DWORD g_gamePid = 0;
 static LauncherSettings g_settings;
-static WCHAR g_toast[512];
-static int g_toastError = 0;
-static DWORD g_toastUntil = 0;
 static WCHAR g_versionId[128];
 static int g_versionFound = 0;
 static HICON g_appIcon = 0;
@@ -130,20 +135,15 @@ static WCHAR g_versionsError[256];
 typedef struct LaunchResult {
     WCHAR message[512];
     int ok;
+    HANDLE process;
+    DWORD pid;
 } LaunchResult;
 
 static LaunchResult g_launchResult;
 static LaunchRequest g_launchRequest;
 
 static void launch_status(const WCHAR *text) {
-    WCHAR *copy;
-    size_t n;
-    if (!text || !text[0]) return;
-    n = wcslen(text) + 1;
-    copy = (WCHAR *)malloc(n * sizeof(WCHAR));
-    if (!copy) return;
-    memcpy(copy, text, n * sizeof(WCHAR));
-    if (!PostMessageW(g_hwnd, WM_APP_LAUNCH_STATUS, 0, (LPARAM)copy)) free(copy);
+    (void)text;
 }
 
 static void remote_version_id(const VersionEntry *entry, WCHAR *out, int cap) {
@@ -318,26 +318,13 @@ static Layout make_layout(void) {
     l.detectBtn.y = 112.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
-    l.memMinus.x = l.card.x + l.card.w - 66.0f;
-    l.memMinus.y = 152.0f;
-    l.memMinus.w = 26.0f;
-    l.memMinus.h = 24.0f;
-    l.memPlus.x = l.card.x + l.card.w - 36.0f;
-    l.memPlus.y = 152.0f;
-    l.memPlus.w = 26.0f;
-    l.memPlus.h = 24.0f;
+    l.memEdit.x = l.card.x + 8.0f;
+    l.memEdit.y = 160.0f;
+    l.memEdit.w = 90.0f;
+    l.memEdit.h = 22.0f;
     return l;
 }
 
-static void set_toast(const WCHAR *text, DWORD ms, int error) {
-    scopy(g_toast, text ? text : L"", 512);
-    g_toastError = error;
-    g_toastUntil = GetTickCount() + ms;
-    if (g_hwnd) {
-        SetTimer(g_hwnd, 1, 250, 0);
-        InvalidateRect(g_hwnd, 0, FALSE);
-    }
-}
 
 /* ---------- native controls ---------- */
 
@@ -351,10 +338,19 @@ static void set_control_theme(HWND hwnd) {
     }
 }
 
+static void set_window_theme_none(HWND hwnd) {
+    HMODULE ux = LoadLibraryW(L"uxtheme.dll");
+    if (ux) {
+        typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
+        PFN_SetWindowTheme fn = (PFN_SetWindowTheme)GetProcAddress(ux, "SetWindowTheme");
+        if (fn) fn(hwnd, L"", L"");
+        FreeLibrary(ux);
+    }
+}
+
 static int is_owner_button(HWND hwnd) {
     return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
-                    hwnd == g_openBtn || hwnd == g_detectBtn ||
-                    hwnd == g_memMinusBtn || hwnd == g_memPlusBtn);
+                    hwnd == g_openBtn || hwnd == g_detectBtn);
 }
 
 static void update_hover_states(void) {
@@ -385,6 +381,9 @@ static void update_hover_states(void) {
     g_hoverButton = target;
     if (old) InvalidateRect(old, 0, FALSE);
     if (target) InvalidateRect(target, 0, FALSE);
+    if (g_page == 0 && g_launchState == LAUNCH_RUNNING && (target == g_launchBtn || old == g_launchBtn)) {
+        SetWindowTextW(g_launchBtn, target == g_launchBtn ? L"Shutdown" : L"Running");
+    }
 }
 
 static void populate_version_list(void) {
@@ -421,18 +420,23 @@ static void create_controls(HWND hwnd) {
     g_launchBtn = CreateWindowExW(0, L"BUTTON", L"Launch",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LAUNCH, inst, 0);
-    g_openBtn = CreateWindowExW(0, L"BUTTON", L"Open",
+    g_openBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
                                 WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OPEN, inst, 0);
     g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_DETECT, inst, 0);
-    g_memMinusBtn = CreateWindowExW(0, L"BUTTON", L"-",
-                                    WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
-                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_MINUS, inst, 0);
-    g_memPlusBtn = CreateWindowExW(0, L"BUTTON", L"+",
-                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
-                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_PLUS, inst, 0);
+    g_memEdit = CreateWindowExW(0, L"EDIT", L"",
+                                WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER,
+                                0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_EDIT, inst, 0);
+    if (g_memEdit) {
+        WCHAR memBuf[32];
+        set_window_theme_none(g_memEdit);
+        wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
+        SetWindowTextW(g_memEdit, memBuf);
+        SendMessageW(g_memEdit, EM_SETLIMITTEXT, 6, 0);
+        SendMessageW(g_memEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+    }
     if (g_list) {
         SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
     }
@@ -442,7 +446,7 @@ static void create_controls(HWND hwnd) {
 }
 
 static void apply_control_fonts(void) {
-    HWND controls[8];
+    HWND controls[7];
     int i;
     controls[0] = g_list;
     controls[1] = g_settingsBtn;
@@ -450,9 +454,8 @@ static void apply_control_fonts(void) {
     controls[3] = g_launchBtn;
     controls[4] = g_openBtn;
     controls[5] = g_detectBtn;
-    controls[6] = g_memMinusBtn;
-    controls[7] = g_memPlusBtn;
-    for (i = 0; i < 8; i++) {
+    controls[6] = g_memEdit;
+    for (i = 0; i < 7; i++) {
         if (controls[i]) SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font20, TRUE);
     }
     if (g_list) SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
@@ -489,20 +492,23 @@ static void layout_controls(void) {
                  (int)(l.detectBtn.x * g_scale + 0.5f), (int)(l.detectBtn.y * g_scale + 0.5f),
                  (int)(l.detectBtn.w * g_scale + 0.5f), (int)(l.detectBtn.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_memMinusBtn, 0,
-                 (int)(l.memMinus.x * g_scale + 0.5f), (int)(l.memMinus.y * g_scale + 0.5f),
-                 (int)(l.memMinus.w * g_scale + 0.5f), (int)(l.memMinus.h * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_memPlusBtn, 0,
-                 (int)(l.memPlus.x * g_scale + 0.5f), (int)(l.memPlus.y * g_scale + 0.5f),
-                 (int)(l.memPlus.w * g_scale + 0.5f), (int)(l.memPlus.h * g_scale + 0.5f),
+    SetWindowPos(g_memEdit, 0,
+                 (int)(l.memEdit.x * g_scale + 0.5f), (int)(l.memEdit.y * g_scale + 0.5f),
+                 (int)(l.memEdit.w * g_scale + 0.5f), (int)(l.memEdit.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 static void sync_page_controls(void) {
     if (g_launchBtn) {
-        SetWindowTextW(g_launchBtn, g_page == 1 ? L"Done" : (g_launching ? L"Launching..." : L"Launch"));
-        EnableWindow(g_launchBtn, g_page == 1 || (!g_launching && g_versions.count > 0));
+        const WCHAR *label = L"Launch";
+        if (g_page == 1) label = L"Done";
+        else if (g_launchState == LAUNCH_STARTING) label = L"Starting...";
+        else if (g_launchState == LAUNCH_RUNNING)
+            label = (g_hoverButton == g_launchBtn) ? L"Shutdown" : L"Running";
+        else if (g_launchState == LAUNCH_FAILED) label = L"Retry";
+        SetWindowTextW(g_launchBtn, label);
+        EnableWindow(g_launchBtn, g_page == 1 || g_launchState == LAUNCH_RUNNING ||
+                                 (!g_launching && g_versions.count > 0));
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
     if (g_logoutBtn) EnableWindow(g_logoutBtn, !g_launching);
@@ -514,16 +520,11 @@ static void sync_page_controls(void) {
         ShowWindow(g_detectBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
         EnableWindow(g_detectBtn, !g_launching);
     }
-    if (g_memMinusBtn) {
-        ShowWindow(g_memMinusBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_memMinusBtn, !g_launching);
+    if (g_memEdit) {
+        ShowWindow(g_memEdit, g_page == 1 ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_memEdit, !g_launching);
     }
-    if (g_memPlusBtn) {
-        ShowWindow(g_memPlusBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_memPlusBtn, !g_launching);
-    }
-    if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
-                        g_hoverButton == g_memMinusBtn || g_hoverButton == g_memPlusBtn)) {
+    if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn)) {
         g_hoverButton = 0;
     }
 }
@@ -543,14 +544,52 @@ static void draw_settings_shapes(GpGraphics *g, const Layout *l) {
     panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, l->card.y, l->card.w, l->card.h, 10, 1);
 }
 
-static void draw_toast_shape(GpGraphics *g, const Layout *l) {
-    float w = 420.0f;
-    float x;
-    if (!g_toast[0] || GetTickCount() >= g_toastUntil) return;
-    if (w > l->mainW - 8) w = l->mainW - 8;
-    x = l->mainX + (l->mainW - w) / 2;
-    panel(g, RGB(42, 46, 54), g_toastError ? RGB(100, 58, 58) : RGB(58, 62, 73),
-          x, l->H - 76, w, 26, 6, 1);
+static COLORREF blend_rgb(COLORREF a, COLORREF b, float t) {
+    int r = (int)(GetRValue(a) + (GetRValue(b) - GetRValue(a)) * t);
+    int g = (int)(GetGValue(a) + (GetGValue(b) - GetGValue(a)) * t);
+    int bl = (int)(GetBValue(a) + (GetBValue(b) - GetBValue(a)) * t);
+    if (r < 0) r = 0; if (r > 255) r = 255;
+    if (g < 0) g = 0; if (g > 255) g = 255;
+    if (bl < 0) bl = 0; if (bl > 255) bl = 255;
+    return RGB(r, g, bl);
+}
+
+static void draw_launch_bar(GpGraphics *g, const Layout *l) {
+    COLORREF base = RGB(53, 49, 77);
+    COLORREF bright = RGB(142, 132, 232);
+    float x, y, w, h;
+    float i;
+    if (g_page != 0) return;
+    x = l->launchBtn.x;
+    y = l->launchBtn.y - 20.0f;
+    w = l->launchBtn.w;
+    h = 10.0f;
+    if (g_launchState == LAUNCH_RUNNING) {
+        base = RGB(24, 62, 43);
+        bright = RGB(92, 214, 139);
+    } else if (g_launchState == LAUNCH_FAILED) {
+        base = RGB(74, 28, 31);
+        bright = RGB(224, 96, 96);
+    }
+    if (g_launchState == LAUNCH_IDLE) {
+        fill_rect(g, base, x, y, w, h);
+        return;
+    }
+    {
+        int barW = (int)w;
+        int head = barW > 0 ? (int)((GetTickCount() / 9) % (DWORD)barW) : 0;
+        fill_rect(g, base, x, y, w, h);
+        for (i = 0; i < w; i += 1.0f) {
+            int px = (int)i;
+            int dist = px > head ? px - head : head - px;
+            float k;
+            if (dist > barW / 2) dist = barW - dist;
+            if (dist >= 74) continue;
+            k = (1.0f - (float)dist / 74.0f);
+            k = k * k * 0.95f;
+            fill_rect(g, blend_rgb(base, bright, k), x + i, y, 1.0f, h);
+        }
+    }
 }
 
 static void draw_shapes(GpGraphics *g, const Layout *l) {
@@ -558,7 +597,7 @@ static void draw_shapes(GpGraphics *g, const Layout *l) {
     draw_sidebar(g, l);
     if (g_page == 0) draw_release_shapes(g, l);
     else draw_settings_shapes(g, l);
-    draw_toast_shape(g, l);
+    draw_launch_bar(g, l);
 }
 
 static void draw_description(HDC dc, const Layout *l, const WCHAR *description) {
@@ -653,7 +692,7 @@ static void draw_texts(HDC dc, const Layout *l) {
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"GAME DIRECTORY", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+        draw_text(dc, L"GAME PATH", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
@@ -666,31 +705,22 @@ static void draw_texts(HDC dc, const Layout *l) {
 
         draw_text(dc, L"MEMORY", l->card.x + 8, 146, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        wsprintfW(memText, L"%d MB", g_settings.memoryMB);
-        draw_text(dc, memText, l->card.x + 8, 162, 140, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, L"MB", l->card.x + 106, 162, 30, 18, g_font22, RGB(197, 199, 205),
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        draw_text(dc, L"(1024 - 32768)", l->card.x + 138, 164, 140, 16, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         draw_text(dc, L"PROFILE", l->card.x + 8, 186, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        wsprintfW(profile, L"%s  (offline)", g_settings.username);
+        wsprintfW(profile, L"%s  (fixed)", g_settings.username);
         draw_text(dc, profile, l->card.x + 8, 202, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
                   l->card.x + 8, 224, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-        draw_text(dc, L"Settings are saved automatically.", l->mainX, l->card.y + l->card.h + 8,
-                  l->mainW, 16, g_font16, RGB(111, 115, 124), DT_LEFT | DT_SINGLELINE);
     }
 
-    if (g_toast[0] && GetTickCount() < g_toastUntil) {
-        float w = 420.0f;
-        float x;
-        if (w > l->mainW - 8) w = l->mainW - 8;
-        x = l->mainX + (l->mainW - w) / 2;
-        draw_text(dc, g_toast, x + 18, l->H - 76, w - 24, 26, g_font20,
-                  g_toastError ? RGB(232, 180, 180) : RGB(198, 200, 206),
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    }
+
 }
 
 
@@ -802,19 +832,38 @@ static DWORD WINAPI versions_thread(LPVOID param) {
 static DWORD WINAPI launch_thread(LPVOID param) {
     LaunchResult *r = &g_launchResult;
     (void)param;
-    r->ok = launch_minecraft(&g_launchRequest, r->message, 512, launch_status);
+    r->ok = launch_minecraft(&g_launchRequest, r->message, 512, launch_status,
+                             &r->process, &r->pid);
     PostMessageW(g_hwnd, WM_APP_LAUNCH_DONE, (WPARAM)r->ok, 0);
     return 0;
 }
 
+static void shutdown_game(void) {
+    if (g_gameProcess) {
+        TerminateProcess(g_gameProcess, 0);
+        WaitForSingleObject(g_gameProcess, 2000);
+        CloseHandle(g_gameProcess);
+        g_gameProcess = 0;
+    }
+    g_gamePid = 0;
+    g_launching = 0;
+    g_launchState = LAUNCH_IDLE;
+    g_launchStarted = 0;
+    sync_page_controls();
+    InvalidateRect(g_hwnd, 0, FALSE);
+}
+
 static void start_launch(void) {
     HANDLE th;
-    if (g_launching) return;
-    if (g_versions.count <= 0) {
-        set_toast(L"No version is loaded.", 3500, 1);
+    if (g_launchState == LAUNCH_RUNNING) {
+        shutdown_game();
         return;
     }
+    if (g_launching) return;
+    if (g_versions.count <= 0) return;
     g_launching = 1;
+    g_launchState = LAUNCH_STARTING;
+    g_launchStarted = 0;
     ZeroMemory(&g_launchResult, sizeof(g_launchResult));
     ZeroMemory(&g_launchRequest, sizeof(g_launchRequest));
     g_launchRequest.settings = g_settings;
@@ -822,25 +871,38 @@ static void start_launch(void) {
     scopy(g_launchRequest.jarUrl, g_versions.items[g_selected].jarUrl, PATH_CAP);
     scopy(g_launchRequest.jsonUrl, g_versions.items[g_selected].jsonUrl, PATH_CAP);
     sync_page_controls();
-    set_toast(L"Preparing Minecraft...", 30000, 0);
     th = CreateThread(0, 8 * 1024 * 1024, launch_thread, &g_launchResult, 0, 0);
     if (th) CloseHandle(th);
     else {
         g_launching = 0;
+        g_launchState = LAUNCH_FAILED;
         sync_page_controls();
-        set_toast(L"Could not start the launcher thread.", 5000, 1);
     }
     InvalidateRect(g_hwnd, 0, FALSE);
 }
 
-static void open_game_folder(void) {
-    HINSTANCE r;
-    if (!dir_exists(g_settings.gameDir)) {
-        set_toast(L"The game directory does not exist.", 4500, 1);
-        return;
+static void browse_game_path(void) {
+    BROWSEINFOW bi;
+    WCHAR display[MAX_PATH];
+    WCHAR path[PATH_CAP];
+    WCHAR versionJson[PATH_CAP];
+    LPITEMIDLIST pidl;
+    ZeroMemory(&bi, sizeof(bi));
+    ZeroMemory(display, sizeof(display));
+    bi.hwndOwner = g_hwnd;
+    bi.pszDisplayName = display;
+    bi.lpszTitle = L"Select the Minecraft game folder (.minecraft)";
+    bi.ulFlags = 0x00000001; /* BIF_RETURNONLYFSDIRS */
+    pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return;
+    path[0] = 0;
+    if (SHGetPathFromIDListW(pidl, path) && path[0]) {
+        scopy(g_settings.gameDir, path, PATH_CAP);
+        settings_save(&g_settings);
+        g_versionFound = detect_version(&g_settings, g_versionId, 128, versionJson, PATH_CAP);
+        InvalidateRect(g_hwnd, 0, FALSE);
     }
-    r = ShellExecuteW(0, L"open", g_settings.gameDir, 0, 0, SW_SHOWNORMAL);
-    if ((INT_PTR)r <= 32) set_toast(L"Could not open the game directory.", 4500, 1);
+    CoTaskMemFree(pidl);
 }
 
 static void browse_java(void) {
@@ -862,30 +924,51 @@ static void browse_java(void) {
         if (n > 4 && !_wcsicmp(path + n - 4, L"\\bin")) path[n - 4] = 0;
         scopy(g_settings.javaPath, path, PATH_CAP);
         settings_save(&g_settings);
-        set_toast(L"Java path updated.", 3500, 0);
         InvalidateRect(g_hwnd, 0, FALSE);
     }
     CoTaskMemFree(pidl);
 }
 
+static void sync_memory_from_edit(int clamp) {
+    WCHAR buf[32];
+    int val;
+    if (!g_memEdit) return;
+    GetWindowTextW(g_memEdit, buf, 32);
+    val = _wtoi(buf);
+    if (clamp) {
+        if (val < 1024) val = 1024;
+        if (val > 32768) val = 32768;
+        wsprintfW(buf, L"%d", val);
+        SetWindowTextW(g_memEdit, buf);
+    }
+    if (val >= 512 && val <= 65536) {
+        g_settings.memoryMB = val;
+        settings_save(&g_settings);
+    }
+}
+
 static void handle_command(int id) {
     if (g_launching && id != IDC_LAUNCH) {
-        set_toast(L"Please wait for Minecraft to start.", 2500, 0);
         return;
     }
     switch (id) {
         case IDC_SETTINGS:
             g_page = 1;
+            if (g_memEdit) {
+                WCHAR memBuf[32];
+                wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
+                SetWindowTextW(g_memEdit, memBuf);
+            }
             sync_page_controls();
             InvalidateRect(g_hwnd, 0, FALSE);
             break;
         case IDC_LOGOUT:
-            scopy(g_settings.username, L"Player", 64);
+            scopy(g_settings.username, L"novoline_rat", 64);
             settings_save(&g_settings);
-            set_toast(L"Logged out. Offline profile: Player.", 4000, 0);
             InvalidateRect(g_hwnd, 0, FALSE);
             break;
         case IDC_LAUNCH:
+            sync_memory_from_edit(1);
             if (g_page == 1) {
                 g_page = 0;
                 sync_page_controls();
@@ -895,20 +978,10 @@ static void handle_command(int id) {
             }
             break;
         case IDC_OPEN:
-            open_game_folder();
+            browse_game_path();
             break;
         case IDC_DETECT:
             browse_java();
-            break;
-        case IDC_MEM_MINUS:
-            if (g_settings.memoryMB > 1024) g_settings.memoryMB -= 512;
-            settings_save(&g_settings);
-            InvalidateRect(g_hwnd, 0, FALSE);
-            break;
-        case IDC_MEM_PLUS:
-            if (g_settings.memoryMB < 16384) g_settings.memoryMB += 512;
-            settings_save(&g_settings);
-            InvalidateRect(g_hwnd, 0, FALSE);
             break;
         default:
             break;
@@ -1088,10 +1161,33 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     }
                     InvalidateRect(hwnd, 0, FALSE);
                 }
+            } else if (id == IDC_MEM_EDIT) {
+                if (code == EN_CHANGE) {
+                    sync_memory_from_edit(0);
+                } else if (code == EN_KILLFOCUS) {
+                    sync_memory_from_edit(1);
+                }
             } else if (code == BN_CLICKED) {
                 handle_command(id);
             }
             return 0;
+        }
+        case WM_CTLCOLOREDIT: {
+            HDC hdc = (HDC)wp;
+            SetTextColor(hdc, RGB(225, 227, 232));
+            SetBkColor(hdc, RGB(43, 47, 56));
+            if (!g_editBrush) g_editBrush = CreateSolidBrush(RGB(43, 47, 56));
+            return (LRESULT)g_editBrush;
+        }
+        case WM_CTLCOLORSTATIC: {
+            if ((HWND)lp == g_memEdit) {
+                HDC hdc = (HDC)wp;
+                SetTextColor(hdc, RGB(124, 128, 136));
+                SetBkColor(hdc, RGB(43, 47, 56));
+                if (!g_editBrush) g_editBrush = CreateSolidBrush(RGB(43, 47, 56));
+                return (LRESULT)g_editBrush;
+            }
+            break;
         }
         case WM_CTLCOLORLISTBOX: {
             HDC hdc = (HDC)wp;
@@ -1107,27 +1203,44 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             break;
         case WM_TIMER:
-            if (wp == 1) {
-                if (GetTickCount() >= g_toastUntil) {
-                    g_toast[0] = 0;
-                    KillTimer(hwnd, 1);
-                    InvalidateRect(hwnd, 0, FALSE);
-                }
-            } else if (wp == 2) {
+            if (wp == 2) {
                 update_hover_states();
+                if (g_launchState == LAUNCH_RUNNING && g_gameProcess) {
+                    if (WaitForSingleObject(g_gameProcess, 0) == WAIT_OBJECT_0) {
+                        DWORD code = 0;
+                        GetExitCodeProcess(g_gameProcess, &code);
+                        CloseHandle(g_gameProcess);
+                        g_gameProcess = 0;
+                        g_gamePid = 0;
+                        g_launchState = (code != 0) ? LAUNCH_FAILED : LAUNCH_IDLE;
+                        sync_page_controls();
+                    }
+                }
+                if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
             }
             return 0;
         case WM_APP_LAUNCH_STATUS:
-            if (lp) {
-                set_toast((const WCHAR *)lp, 30000, 0);
-                free((void *)lp);
-            }
+            if (lp) free((void *)lp);
             return 0;
         case WM_APP_LAUNCH_DONE:
             g_launching = 0;
+            if (g_gameProcess) {
+                CloseHandle(g_gameProcess);
+                g_gameProcess = 0;
+            }
+            if (g_launchResult.ok && g_launchResult.process) {
+                g_gameProcess = g_launchResult.process;
+                g_gamePid = g_launchResult.pid;
+                g_launchStarted = GetTickCount();
+                g_launchState = LAUNCH_RUNNING;
+                g_launchResult.process = 0;
+                settings_save(&g_settings);
+            } else {
+                if (g_launchResult.process) CloseHandle(g_launchResult.process);
+                g_launchResult.process = 0;
+                g_launchState = LAUNCH_FAILED;
+            }
             sync_page_controls();
-            set_toast(g_launchResult.message, g_launchResult.ok ? 6000 : 7000, g_launchResult.ok ? 0 : 1);
-            if (g_launchResult.ok) settings_save(&g_settings);
             InvalidateRect(hwnd, 0, FALSE);
             return 0;
         case WM_APP_VERSIONS_DONE: {
@@ -1153,10 +1266,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             DestroyWindow(hwnd);
             return 0;
         case WM_DESTROY:
+            sync_memory_from_edit(1);
             KillTimer(hwnd, 2);
             if (g_listBrush) {
                 DeleteObject(g_listBrush);
                 g_listBrush = 0;
+            }
+            if (g_editBrush) {
+                DeleteObject(g_editBrush);
+                g_editBrush = 0;
             }
             PostQuitMessage(0);
             return 0;

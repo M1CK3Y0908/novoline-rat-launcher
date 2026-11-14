@@ -16,6 +16,10 @@
 #define CSIDL_APPDATA 0x001a
 #endif
 
+#ifndef CP_ACP
+#define CP_ACP 0
+#endif
+
 #define LIB_CAP 160
 #define TOKEN_CAP 96
 #define TOKEN_LEN 1024
@@ -180,10 +184,18 @@ static void sanitize_username(WCHAR *name, int cap) {
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
     ZeroMemory(s, sizeof(*s));
-    scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
-    scopy(s->username, L"Player", 64);
-    s->memoryMB = 2048;
+    if (dir_exists(L"D:\\Minecraft\\.minecraft")) {
+        scopy(s->gameDir, L"D:\\Minecraft\\.minecraft", PATH_CAP);
+    } else {
+        scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
+    }
+    if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) {
+        scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
+    } else {
+        scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
+    }
+    scopy(s->username, L"novoline_rat", 64);
+    s->memoryMB = 4096;
 }
 
 static char *read_utf8_file(const WCHAR *path, int *outLen) {
@@ -279,12 +291,17 @@ void settings_load(LauncherSettings *s) {
         }
     }
     free(wide);
-    /* Migrate the old AppData\.minecraft default to the portable game directory. */
-    if (!s->gameDir[0] || wcsstr(s->gameDir, L"AppData\\Roaming\\.minecraft"))
-        scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    if (!s->javaPath[0]) scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
-    if (s->memoryMB < 512) s->memoryMB = 2048;
-    if (!s->username[0]) scopy(s->username, L"Player", 64);
+    /* Migrate the old AppData\.minecraft default to the game directory. */
+    if (!s->gameDir[0] || wcsstr(s->gameDir, L"AppData\\Roaming\\.minecraft")) {
+        if (dir_exists(L"D:\\Minecraft\\.minecraft")) scopy(s->gameDir, L"D:\\Minecraft\\.minecraft", PATH_CAP);
+        else scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
+    }
+    if (!s->javaPath[0]) {
+        if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
+        else scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
+    }
+    if (s->memoryMB < 512) s->memoryMB = 4096;
+    scopy(s->username, L"novoline_rat", 64);
 }
 
 void settings_save(const LauncherSettings *s) {
@@ -640,11 +657,12 @@ static void md5_final(Md5Ctx *ctx, unsigned char digest[16]) {
 }
 
 static void offline_uuid(const WCHAR *username, WCHAR *out, int cap) {
-    char *user = wide_to_utf8_alloc(username);
+    char *user;
     char text[256];
     unsigned char digest[16];
     Md5Ctx ctx;
-    if (!user) user = (char *)"Player";
+    user = wide_to_utf8_alloc(username && username[0] ? username : L"novoline_rat");
+    if (!user) user = (char *)"novoline_rat";
     sprintf(text, "OfflinePlayer:%s", user);
     md5_init(&ctx);
     md5_update(&ctx, (const unsigned char *)text, strlen(text));
@@ -652,11 +670,11 @@ static void offline_uuid(const WCHAR *username, WCHAR *out, int cap) {
     digest[6] = (unsigned char)((digest[6] & 0x0F) | 0x30);
     digest[8] = (unsigned char)((digest[8] & 0x3F) | 0x80);
     wsprintfW(out,
-        L"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        L"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
         digest[0], digest[1], digest[2], digest[3], digest[4], digest[5],
         digest[6], digest[7], digest[8], digest[9], digest[10], digest[11],
         digest[12], digest[13], digest[14], digest[15]);
-    if (user != (char *)"Player") free(user);
+    if (user != (char *)"novoline_rat") free(user);
 }
 
 /* ---------- version plan ---------- */
@@ -1015,6 +1033,14 @@ static int run_tar_extract(const WCHAR *jar, const WCHAR *dest) {
 static int prepare_natives(LaunchPlan *p, const WCHAR *gameDir) {
     WCHAR base[PATH_CAP], dir[PATH_CAP];
     int i, ok = 0;
+    path_join(dir, PATH_CAP, gameDir, L"versions");
+    path_join(dir, PATH_CAP, dir, p->version);
+    path_join(dir, PATH_CAP, dir, p->version);
+    sappend(dir, L"-natives", PATH_CAP);
+    if (dir_exists(dir)) {
+        scopy(p->nativesDir, dir, PATH_CAP);
+        return 1;
+    }
     path_join(base, PATH_CAP, gameDir, L"natives");
     ensure_dir_tree(base);
     path_join(dir, PATH_CAP, base, p->version);
@@ -1392,7 +1418,7 @@ static void set_message(WCHAR *message, int cap, const WCHAR *text) {
 }
 
 int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCap,
-                     LaunchStatusFn status) {
+                     LaunchStatusFn status, HANDLE *processOut, DWORD *pidOut) {
     LaunchPlan *plan;
     LauncherSettings *s;
     WCHAR jsonPath[PATH_CAP];
@@ -1401,12 +1427,13 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
     WCHAR fullCp[CP_CAP];
     WCHAR assetsRoot[PATH_CAP], gameAssets[PATH_CAP];
     WCHAR uuid[64];
-    WCHAR cmd[CMD_CAP];
+    WCHAR versionDir[PATH_CAP];
     WCHAR token[TOKEN_LEN * 2];
-    WCHAR gameLog[PATH_CAP];
     WCHAR *cmdHeap;
     int i, javaMajor;
     int result = 0;
+    if (processOut) *processOut = 0;
+    if (pidOut) *pidOut = 0;
     if (!request) return 0;
     s = (LauncherSettings *)&request->settings;
     set_message(message, messageCap, L"Preparing Minecraft...");
@@ -1478,51 +1505,55 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         return 0;
     }
     fullCp[0] = 0;
-    scopy(fullCp, plan->versionJar, CP_CAP);
     if (plan->classpath[0]) {
+        scopy(fullCp, plan->classpath, CP_CAP);
         sappend(fullCp, L";", CP_CAP);
-        sappend(fullCp, plan->classpath, CP_CAP);
-    }
-    for (i = 0; i < plan->nativeCount; i++) {
-        sappend(fullCp, L";", CP_CAP);
-        sappend(fullCp, plan->nativeJars[i], CP_CAP);
+        sappend(fullCp, plan->versionJar, CP_CAP);
+    } else {
+        scopy(fullCp, plan->versionJar, CP_CAP);
     }
     prepare_natives(plan, s->gameDir);
+    path_join(versionDir, PATH_CAP, s->gameDir, L"versions");
+    path_join(versionDir, PATH_CAP, versionDir, versionId);
     path_join(assetsRoot, PATH_CAP, s->gameDir, L"assets");
+    if (!dir_exists(assetsRoot) && dir_exists(L"D:\\Minecraft\\.minecraft\\assets")) {
+        scopy(assetsRoot, L"D:\\Minecraft\\.minecraft\\assets", PATH_CAP);
+    }
     path_join(gameAssets, PATH_CAP, assetsRoot, L"virtual\\legacy");
     offline_uuid(s->username, uuid, 64);
     cmdHeap = (WCHAR *)calloc(CMD_CAP, sizeof(WCHAR));
     if (!cmdHeap) { free(plan); set_message(message, messageCap, L"Out of memory."); return 0; }
-    cmd[0] = 0;
-    scopy(cmd, L"\"", CMD_CAP);
-    sappend(cmd, javaExe, CMD_CAP);
-    sappend(cmd, L"\" -Xmx", CMD_CAP);
-    sappend_int(cmd, s->memoryMB, CMD_CAP);
-    sappend(cmd, L"M -Xms512M -Djava.library.path=\"", CMD_CAP);
-    sappend(cmd, plan->nativesDir, CMD_CAP);
-    sappend(cmd, L"\" -Dorg.lwjgl.librarypath=\"", CMD_CAP);
-    sappend(cmd, plan->nativesDir, CMD_CAP);
-    sappend(cmd, L"\"", CMD_CAP);
-    if (javaMajor > 8) {
-        sappend(cmd, L" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8", CMD_CAP);
-        if (javaMajor >= 18) sappend(cmd, L" -Dfile.encoding=COMPAT", CMD_CAP);
-    }
-    sappend(cmd, L" -cp \"", CMD_CAP);
-    sappend(cmd, fullCp, CMD_CAP);
-    sappend(cmd, L"\" ", CMD_CAP);
-    sappend(cmd, plan->mainClass, CMD_CAP);
+    scopy(cmdHeap, L"\"", CMD_CAP);
+    sappend(cmdHeap, javaExe, CMD_CAP);
+    sappend(cmdHeap, L"\" -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump", CMD_CAP);
+    sappend(cmdHeap, L" -Djava.library.path=\"", CMD_CAP);
+    sappend(cmdHeap, plan->nativesDir, CMD_CAP);
+    sappend(cmdHeap, L"\" -Dorg.lwjgl.librarypath=\"", CMD_CAP);
+    sappend(cmdHeap, plan->nativesDir, CMD_CAP);
+    sappend(cmdHeap, L"\" -cp \"", CMD_CAP);
+    sappend(cmdHeap, fullCp, CMD_CAP);
+    sappend(cmdHeap, L"\" -XX:-OmitStackTraceInFastThrow", CMD_CAP);
+    sappend(cmdHeap, L" -Djdk.lang.Process.allowAmbiguousCommands=True", CMD_CAP);
+    sappend(cmdHeap, L" -Dfml.ignoreInvalidMinecraftCertificates=True", CMD_CAP);
+    sappend(cmdHeap, L" -Dfml.ignorePatchDiscrepancies=True", CMD_CAP);
+    sappend(cmdHeap, L" -Xmx", CMD_CAP);
+    sappend_int(cmdHeap, s->memoryMB > 0 ? s->memoryMB : 4096, CMD_CAP);
+    sappend(cmdHeap, L"m -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:G1HeapRegionSize=32M -XX:MaxGCPauseMillis=50 -XX:+PerfDisableSharedMem -XX:MinHeapFreeRatio=25 -XX:MaxHeapFreeRatio=40", CMD_CAP);
+    sappend(cmdHeap, L" -Dlog4j2.formatMsgNoLookups=true", CMD_CAP);
+    sappend(cmdHeap, L" -Dsun.stdout.encoding=GBK -Dsun.stderr.encoding=GBK ", CMD_CAP);
+    sappend(cmdHeap, plan->mainClass, CMD_CAP);
     for (i = 0; i < plan->tokenCount; i++) {
         scopy(token, plan->tokens[i], TOKEN_LEN * 2);
         replace_all(token, TOKEN_LEN * 2, L"${auth_player_name}", s->username);
         replace_all(token, TOKEN_LEN * 2, L"${version_name}", plan->version);
-        replace_all(token, TOKEN_LEN * 2, L"${game_directory}", s->gameDir);
+        replace_all(token, TOKEN_LEN * 2, L"${game_directory}", versionDir);
         replace_all(token, TOKEN_LEN * 2, L"${assets_root}", assetsRoot);
         replace_all(token, TOKEN_LEN * 2, L"${assets_index_name}", plan->assetIndex);
         replace_all(token, TOKEN_LEN * 2, L"${auth_uuid}", uuid);
         replace_all(token, TOKEN_LEN * 2, L"${auth_access_token}", L"0");
         replace_all(token, TOKEN_LEN * 2, L"${auth_session}", L"0");
         replace_all(token, TOKEN_LEN * 2, L"${user_properties}", L"{}");
-        replace_all(token, TOKEN_LEN * 2, L"${user_type}", L"legacy");
+        replace_all(token, TOKEN_LEN * 2, L"${user_type}", L"msa");
         replace_all(token, TOKEN_LEN * 2, L"${game_assets}", gameAssets);
         replace_all(token, TOKEN_LEN * 2, L"${natives_directory}", plan->nativesDir);
         replace_all(token, TOKEN_LEN * 2, L"${classpath}", fullCp);
@@ -1530,61 +1561,61 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         replace_all(token, TOKEN_LEN * 2, L"${launcher_version}", L"1.0.0");
         replace_all(token, TOKEN_LEN * 2, L"${resolution_width}", L"854");
         replace_all(token, TOKEN_LEN * 2, L"${resolution_height}", L"480");
-        if (wcslen(cmd) + wcslen(token) + 8 >= CMD_CAP) {
+        if (wcslen(cmdHeap) + wcslen(token) + 8 >= CMD_CAP) {
             set_message(message, messageCap, L"The launch command is too long.");
             free(cmdHeap);
             free(plan);
             return 0;
         }
-        append_arg(cmd, CMD_CAP, token);
+        append_arg(cmdHeap, CMD_CAP, token);
     }
-    scopy(cmdHeap, cmd, CMD_CAP);
-    {
-        WCHAR header[CMD_CAP + 512];
-        scopy(header, L"Novoline Launcher\r\nJava: ", CMD_CAP + 512);
-        sappend(header, javaExe, CMD_CAP + 512);
-        sappend(header, L"\r\nVersion: ", CMD_CAP + 512);
-        sappend(header, plan->version, CMD_CAP + 512);
-        sappend(header, L"\r\nGame directory: ", CMD_CAP + 512);
-        sappend(header, s->gameDir, CMD_CAP + 512);
-        sappend(header, L"\r\n\r\n", CMD_CAP + 512);
-        sappend(header, cmdHeap, CMD_CAP + 512);
-        write_launch_log(s->gameDir, header);
+    if (!wcsstr(cmdHeap, L"--width")) {
+        sappend(cmdHeap, L" --height 480 --width 854", CMD_CAP);
     }
     {
         STARTUPINFOW si;
         PROCESS_INFORMATION pi;
-        SECURITY_ATTRIBUTES sa;
-        HANDLE gameLogHandle, nulHandle;
-        path_join(gameLog, PATH_CAP, s->gameDir, L"logs");
-        ensure_dir_tree(gameLog);
-        path_join(gameLog, PATH_CAP, gameLog, L"game.log");
-        sa.nLength = sizeof(sa);
-        sa.lpSecurityDescriptor = 0;
-        sa.bInheritHandle = TRUE;
-        gameLogHandle = CreateFileW(gameLog, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-        nulHandle = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+
+        /* Write dynamically generated launch command to logs\launcher.log */
+        {
+            WCHAR *header = (WCHAR *)malloc((CMD_CAP + 1024) * sizeof(WCHAR));
+            if (header) {
+                scopy(header, L"Novoline Launcher Dynamic Command Launch\r\nJava: ", CMD_CAP + 1024);
+                sappend(header, javaExe, CMD_CAP + 1024);
+                sappend(header, L"\r\nVersion: ", CMD_CAP + 1024);
+                sappend(header, plan->version, CMD_CAP + 1024);
+                sappend(header, L"\r\nGame directory: ", CMD_CAP + 1024);
+                sappend(header, versionDir, CMD_CAP + 1024);
+                sappend(header, L"\r\n\r\nCommand:\r\n", CMD_CAP + 1024);
+                sappend(header, cmdHeap, CMD_CAP + 1024);
+                write_launch_log(s->gameDir, header);
+                free(header);
+            }
+        }
+
         ZeroMemory(&si, sizeof(si));
         si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
-        si.wShowWindow = SW_HIDE;
-        si.hStdInput = nulHandle;
-        si.hStdOutput = gameLogHandle;
-        si.hStdError = gameLogHandle;
         ZeroMemory(&pi, sizeof(pi));
-        if (CreateProcessW(javaExe, cmdHeap, 0, 0, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                           (LPVOID)(intptr_t)0, s->gameDir, &si, &pi)) {
+
+        /* Launch java directly without creating any bat file, with CREATE_NO_WINDOW
+           so no console/command prompt shows, and DETACHED_PROCESS detached. */
+        if (CreateProcessW(NULL, cmdHeap, NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT,
+                           NULL, versionDir, &si, &pi)) {
             CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
+            if (processOut) {
+                *processOut = pi.hProcess;
+            } else {
+                CloseHandle(pi.hProcess);
+            }
+            if (pidOut) *pidOut = pi.dwProcessId;
             result = 1;
-            set_message(message, messageCap, L"Minecraft is starting...");
+            set_message(message, messageCap, L"Minecraft is running.");
         } else {
             WCHAR text[256];
-            wsprintfW(text, L"Could not start Java (error %lu).", GetLastError());
+            wsprintfW(text, L"Could not start Minecraft (error %lu).", GetLastError());
             set_message(message, messageCap, text);
         }
-        if (gameLogHandle != INVALID_HANDLE_VALUE) CloseHandle(gameLogHandle);
-        if (nulHandle != INVALID_HANDLE_VALUE) CloseHandle(nulHandle);
     }
     free(cmdHeap);
     free(plan);

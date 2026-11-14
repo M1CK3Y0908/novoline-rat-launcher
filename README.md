@@ -34,6 +34,8 @@ dist\NovolineLauncher.exe
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
 - `Settings`：显示游戏目录、Java Path、内存和离线档案；可打开游戏目录、浏览选择 Java、调整内存。
+- 启动按钮直接显示状态：`Launch`、`Starting...`、`Running`、`Shutdown`、`Retry`。
+- 启动按钮上方有 10px 状态色条：启动中为主题色流光，运行中为绿色流光，失败为红色流光。
 - `Log out`：切换为离线档案 `Player`。
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`

@@ -28,7 +28,7 @@ int detect_java(LauncherSettings *s, int requiredMajor);
 int detect_version(const LauncherSettings *s, WCHAR *versionId, int versionCap,
                    WCHAR *jsonPath, int jsonCap);
 int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCap,
-                     LaunchStatusFn status);
+                     LaunchStatusFn status, HANDLE *processOut, DWORD *pidOut);
 
 const WCHAR *settings_config_path(void);
 const WCHAR *settings_app_dir(void);
