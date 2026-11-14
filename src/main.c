@@ -32,6 +32,8 @@
 #define IDC_OPEN       1005
 #define IDC_DETECT     1006
 #define IDC_MEM_EDIT   1007
+#define IDC_RESET_GAME 1009
+#define IDC_RESET_JAVA 1010
 #define DESIGN_W 584.0f
 #define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
@@ -64,7 +66,7 @@ typedef struct Layout {
     TRect logoutBtn;
     TRect launchBtn;
     TRect card;
-    TRect openBtn, detectBtn;
+    TRect openBtn, detectBtn, resetGameBtn, resetJavaBtn;
     TRect memEdit;
     float mainX, mainW;
 } Layout;
@@ -77,6 +79,8 @@ static HWND g_logoutBtn;
 static HWND g_launchBtn;
 static HWND g_openBtn;
 static HWND g_detectBtn;
+static HWND g_resetGameBtn;
+static HWND g_resetJavaBtn;
 static HWND g_memEdit;
 static HBRUSH g_editBrush;
 static HWND g_hoverButton;
@@ -346,6 +350,14 @@ static Layout make_layout(void) {
     l.detectBtn.y = 112.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
+    l.resetGameBtn.x = l.card.x + 8.0f;
+    l.resetGameBtn.y = 80.0f;
+    l.resetGameBtn.w = 54.0f;
+    l.resetGameBtn.h = 22.0f;
+    l.resetJavaBtn.x = l.card.x + 8.0f;
+    l.resetJavaBtn.y = 120.0f;
+    l.resetJavaBtn.w = 54.0f;
+    l.resetJavaBtn.h = 22.0f;
     l.memEdit.x = l.card.x + 8.0f;
     l.memEdit.y = 160.0f;
     l.memEdit.w = 90.0f;
@@ -378,7 +390,8 @@ static void set_window_theme_none(HWND hwnd) {
 
 static int is_owner_button(HWND hwnd) {
     return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
-                    hwnd == g_openBtn || hwnd == g_detectBtn);
+                    hwnd == g_openBtn || hwnd == g_detectBtn ||
+                    hwnd == g_resetGameBtn || hwnd == g_resetJavaBtn);
 }
 
 static void update_hover_states(void) {
@@ -454,6 +467,12 @@ static void create_controls(HWND hwnd) {
     g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_DETECT, inst, 0);
+    g_resetGameBtn = CreateWindowExW(0, L"BUTTON", L"Reset",
+                                     WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_GAME, inst, 0);
+    g_resetJavaBtn = CreateWindowExW(0, L"BUTTON", L"Reset",
+                                     WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_JAVA, inst, 0);
     g_memEdit = CreateWindowExW(0, L"EDIT", L"",
                                 WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_EDIT, inst, 0);
@@ -474,7 +493,7 @@ static void create_controls(HWND hwnd) {
 }
 
 static void apply_control_fonts(void) {
-    HWND controls[7];
+    HWND controls[9];
     int i;
     controls[0] = g_list;
     controls[1] = g_settingsBtn;
@@ -483,7 +502,9 @@ static void apply_control_fonts(void) {
     controls[4] = g_openBtn;
     controls[5] = g_detectBtn;
     controls[6] = g_memEdit;
-    for (i = 0; i < 7; i++) {
+    controls[7] = g_resetGameBtn;
+    controls[8] = g_resetJavaBtn;
+    for (i = 0; i < 9; i++) {
         if (controls[i]) SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font20, TRUE);
     }
     if (g_list) SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
@@ -520,6 +541,14 @@ static void layout_controls(void) {
                  (int)(l.detectBtn.x * g_scale + 0.5f), (int)(l.detectBtn.y * g_scale + 0.5f),
                  (int)(l.detectBtn.w * g_scale + 0.5f), (int)(l.detectBtn.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_resetGameBtn, 0,
+                 (int)(l.resetGameBtn.x * g_scale + 0.5f), (int)(l.resetGameBtn.y * g_scale + 0.5f),
+                 (int)(l.resetGameBtn.w * g_scale + 0.5f), (int)(l.resetGameBtn.h * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(g_resetJavaBtn, 0,
+                 (int)(l.resetJavaBtn.x * g_scale + 0.5f), (int)(l.resetJavaBtn.y * g_scale + 0.5f),
+                 (int)(l.resetJavaBtn.w * g_scale + 0.5f), (int)(l.resetJavaBtn.h * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_memEdit, 0,
                  (int)(l.memEdit.x * g_scale + 0.5f), (int)(l.memEdit.y * g_scale + 0.5f),
                  (int)(l.memEdit.w * g_scale + 0.5f), (int)(l.memEdit.h * g_scale + 0.5f),
@@ -553,7 +582,16 @@ static void sync_page_controls(void) {
         ShowWindow(g_memEdit, g_page == 1 ? SW_SHOW : SW_HIDE);
         EnableWindow(g_memEdit, !g_launching);
     }
-    if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn)) {
+    if (g_resetGameBtn) {
+        ShowWindow(g_resetGameBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_resetGameBtn, !g_launching);
+    }
+    if (g_resetJavaBtn) {
+        ShowWindow(g_resetJavaBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_resetJavaBtn, !g_launching);
+    }
+    if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
+                        g_hoverButton == g_resetGameBtn || g_hoverButton == g_resetJavaBtn)) {
         g_hoverButton = 0;
     }
 }
@@ -731,13 +769,13 @@ static void draw_texts(HDC dc, const Layout *l) {
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"GAME PATH", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, g_settings.gameDir, l->card.x + 68, 82, l->card.w - 146, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
         draw_text(dc, L"JAVA PATH", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
-                  l->card.x + 8, 122, l->card.w - 88, 18, g_font22, RGB(197, 199, 205),
+                  l->card.x + 68, 122, l->card.w - 146, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
         draw_text(dc, L"MEMORY", l->card.x + 8, 146, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
@@ -984,6 +1022,20 @@ static void sync_memory_from_edit(int clamp) {
     }
 }
 
+static void reset_game_path(void) {
+    WCHAR versionJson[PATH_CAP];
+    scopy(g_settings.gameDir, default_game_dir(), PATH_CAP);
+    settings_save(&g_settings);
+    g_versionFound = detect_version(&g_settings, g_versionId, 128, versionJson, PATH_CAP);
+    InvalidateRect(g_hwnd, 0, FALSE);
+}
+
+static void reset_java_path(void) {
+    scopy(g_settings.javaPath, default_java_dir(), PATH_CAP);
+    settings_save(&g_settings);
+    InvalidateRect(g_hwnd, 0, FALSE);
+}
+
 static void handle_command(int id) {
     if (g_launching && id != IDC_LAUNCH) {
         return;
@@ -1019,6 +1071,12 @@ static void handle_command(int id) {
             break;
         case IDC_DETECT:
             browse_java();
+            break;
+        case IDC_RESET_GAME:
+            reset_game_path();
+            break;
+        case IDC_RESET_JAVA:
+            reset_java_path();
             break;
         default:
             break;

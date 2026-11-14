@@ -181,6 +181,9 @@ static void sanitize_username(WCHAR *name, int cap) {
     if (!name[0]) scopy(name, L"Player", cap);
 }
 
+const WCHAR *default_game_dir(void) { return DEFAULT_GAME_DIR; }
+const WCHAR *default_java_dir(void) { return DEFAULT_JAVA_DIR; }
+
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
     ZeroMemory(s, sizeof(*s));

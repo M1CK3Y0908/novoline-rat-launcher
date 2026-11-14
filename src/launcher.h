@@ -22,6 +22,8 @@ typedef struct LaunchRequest {
 typedef void (*LaunchStatusFn)(const WCHAR *text);
 
 void settings_defaults(LauncherSettings *s);
+const WCHAR *default_game_dir(void);
+const WCHAR *default_java_dir(void);
 void settings_load(LauncherSettings *s);
 void settings_save(const LauncherSettings *s);
 int detect_java(LauncherSettings *s, int requiredMajor);
