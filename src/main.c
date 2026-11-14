@@ -34,6 +34,14 @@
 #define IDC_MEM_EDIT   1007
 #define IDC_RESET_GAME 1009
 #define IDC_RESET_JAVA 1010
+#define IDC_SETTINGS_TAB 1011
+#define TCIF_TEXT_LOCAL 0x0001
+#define TCM_GETCURSEL_LOCAL 0x130B
+#define TCM_SETCURSEL_LOCAL 0x130C
+#define TCM_SETITEMSIZE_LOCAL 0x1329
+#define TCM_INSERTITEMW_LOCAL 0x133E
+#define TCN_SELCHANGE_LOCAL (-551)
+#define ODT_TAB_LOCAL 101
 #define DESIGN_W 584.0f
 #define DESIGN_H 361.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
@@ -66,7 +74,7 @@ typedef struct Layout {
     TRect logoutBtn;
     TRect launchBtn;
     TRect card;
-    TRect openBtn, detectBtn, resetGameBtn, resetJavaBtn;
+    TRect openBtn, detectBtn, resetGameBtn, resetJavaBtn, tab;
     TRect memEdit;
     float mainX, mainW;
 } Layout;
@@ -81,6 +89,9 @@ static HWND g_openBtn;
 static HWND g_detectBtn;
 static HWND g_resetGameBtn;
 static HWND g_resetJavaBtn;
+static HWND g_tab;
+static WNDPROC g_tabOldProc;
+static int g_settingsTab = 0;
 static HWND g_memEdit;
 static HBRUSH g_editBrush;
 static HWND g_hoverButton;
@@ -343,23 +354,27 @@ static Layout make_layout(void) {
     l.card.w = l.mainW;
     l.card.h = 196.0f;
     l.openBtn.x = l.card.x + l.card.w - 70.0f;
-    l.openBtn.y = 72.0f;
+    l.openBtn.y = 110.0f;
     l.openBtn.w = 60.0f;
     l.openBtn.h = 24.0f;
     l.detectBtn.x = l.card.x + l.card.w - 70.0f;
-    l.detectBtn.y = 112.0f;
+    l.detectBtn.y = 148.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
     l.resetGameBtn.x = l.card.x + l.card.w - 130.0f;
-    l.resetGameBtn.y = 72.0f;
+    l.resetGameBtn.y = 110.0f;
     l.resetGameBtn.w = 54.0f;
     l.resetGameBtn.h = 24.0f;
     l.resetJavaBtn.x = l.card.x + l.card.w - 130.0f;
-    l.resetJavaBtn.y = 112.0f;
+    l.resetJavaBtn.y = 148.0f;
     l.resetJavaBtn.w = 54.0f;
     l.resetJavaBtn.h = 24.0f;
+    l.tab.x = l.card.x + 8.0f;
+    l.tab.y = l.card.y + 8.0f;
+    l.tab.w = 336.0f;
+    l.tab.h = 30.0f;
     l.memEdit.x = l.card.x + 8.0f;
-    l.memEdit.y = 160.0f;
+    l.memEdit.y = 120.0f;
     l.memEdit.w = 90.0f;
     l.memEdit.h = 22.0f;
     return l;
@@ -386,6 +401,87 @@ static void set_window_theme_none(HWND hwnd) {
         if (fn) fn(hwnd, L"", L"");
         FreeLibrary(ux);
     }
+}
+
+typedef struct TabItemWLocal {
+    UINT mask;
+    DWORD dwState;
+    DWORD dwStateMask;
+    LPWSTR pszText;
+    int cchTextMax;
+    int iImage;
+    LPARAM lParam;
+} TabItemWLocal;
+
+static void init_tab_control_support(void) {
+    HMODULE lib = LoadLibraryW(L"comctl32.dll");
+    typedef BOOL (WINAPI *PFN_InitCommonControlsEx)(const void *);
+    PFN_InitCommonControlsEx init;
+    struct { DWORD size; DWORD icc; } icc;
+    if (!lib) return;
+    init = (PFN_InitCommonControlsEx)GetProcAddress(lib, "InitCommonControlsEx");
+    if (!init) return;
+    icc.size = sizeof(icc);
+    icc.icc = 0x000000FF;
+    init(&icc);
+}
+
+static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_ERASEBKGND) {
+        HDC dc = (HDC)wp;
+        RECT r;
+        HBRUSH brush;
+        GetClientRect(hwnd, &r);
+        brush = CreateSolidBrush(RGB_PANEL);
+        FillRect(dc, &r, brush);
+        DeleteObject(brush);
+        return 1;
+    }
+    return CallWindowProcW(g_tabOldProc, hwnd, msg, wp, lp);
+}
+
+static void add_settings_tabs(void) {
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    int i;
+    if (!g_tab) return;
+    for (i = 0; i < 3; i++) {
+        TabItemWLocal item;
+        ZeroMemory(&item, sizeof(item));
+        item.mask = TCIF_TEXT_LOCAL;
+        item.pszText = (LPWSTR)labels[i];
+        item.cchTextMax = (int)wcslen(labels[i]);
+        SendMessageW(g_tab, TCM_INSERTITEMW_LOCAL, (WPARAM)i, (LPARAM)&item);
+    }
+    SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
+}
+
+static void draw_tab_item(const DRAWITEMSTRUCT *d) {
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    RECT r;
+    COLORREF fill;
+    COLORREF text;
+    HBRUSH brush;
+    HGDIOBJ oldFont;
+    int selected;
+    if (!d || d->itemID >= 3) return;
+    selected = (d->itemState & ODS_SELECTED) != 0;
+    fill = selected ? RGB(53, 49, 77) : RGB_PANEL;
+    text = selected ? RGB(232, 234, 239) : RGB(150, 154, 162);
+    r = d->rcItem;
+    brush = CreateSolidBrush(fill);
+    FillRect(d->hDC, &r, brush);
+    DeleteObject(brush);
+    brush = CreateSolidBrush(selected ? RGB(90, 84, 130) : RGB_BORDER);
+    FrameRect(d->hDC, &r, brush);
+    DeleteObject(brush);
+    r.left += (LONG)(4 * g_scale);
+    r.right -= (LONG)(4 * g_scale);
+    SetBkMode(d->hDC, TRANSPARENT);
+    SetTextColor(d->hDC, text);
+    oldFont = SelectObject(d->hDC, g_font20);
+    DrawTextW(d->hDC, labels[d->itemID], -1, &r,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(d->hDC, oldFont);
 }
 
 static int is_owner_button(HWND hwnd) {
@@ -473,6 +569,17 @@ static void create_controls(HWND hwnd) {
     g_resetJavaBtn = CreateWindowExW(0, L"BUTTON", L"Reset",
                                      WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_JAVA, inst, 0);
+    g_tab = CreateWindowExW(0, L"SysTabControl32", L"",
+                            WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS |
+                                0x2000 /* TCS_OWNERDRAWFIXED */ |
+                                0x8000 /* TCS_FOCUSNEVER */ |
+                                0x0400 /* TCS_FIXEDWIDTH */,
+                            0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS_TAB, inst, 0);
+    if (g_tab) {
+        set_window_theme_none(g_tab);
+        g_tabOldProc = (WNDPROC)SetWindowLongPtrW(g_tab, GWLP_WNDPROC, (LONG_PTR)settings_tab_proc);
+        add_settings_tabs();
+    }
     g_memEdit = CreateWindowExW(0, L"EDIT", L"",
                                 WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_EDIT, inst, 0);
@@ -549,6 +656,15 @@ static void layout_controls(void) {
                  (int)(l.resetJavaBtn.x * g_scale + 0.5f), (int)(l.resetJavaBtn.y * g_scale + 0.5f),
                  (int)(l.resetJavaBtn.w * g_scale + 0.5f), (int)(l.resetJavaBtn.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    if (g_tab) {
+        int tw = (int)(((l.tab.w - 6.0f) / 3.0f) * g_scale + 0.5f);
+        int th = (int)(26 * g_scale + 0.5f);
+        SendMessageW(g_tab, TCM_SETITEMSIZE_LOCAL, 0, MAKELPARAM(tw, th));
+    }
+    SetWindowPos(g_tab, 0,
+                 (int)(l.tab.x * g_scale + 0.5f), (int)(l.tab.y * g_scale + 0.5f),
+                 (int)(l.tab.w * g_scale + 0.5f), (int)(l.tab.h * g_scale + 0.5f),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_memEdit, 0,
                  (int)(l.memEdit.x * g_scale + 0.5f), (int)(l.memEdit.y * g_scale + 0.5f),
                  (int)(l.memEdit.w * g_scale + 0.5f), (int)(l.memEdit.h * g_scale + 0.5f),
@@ -570,24 +686,28 @@ static void sync_page_controls(void) {
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
     if (g_logoutBtn) EnableWindow(g_logoutBtn, !g_launching);
+    if (g_tab) {
+        ShowWindow(g_tab, g_page == 1 ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_tab, !g_launching);
+    }
     if (g_openBtn) {
-        ShowWindow(g_openBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_openBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_openBtn, !g_launching);
     }
     if (g_detectBtn) {
-        ShowWindow(g_detectBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_detectBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_detectBtn, !g_launching);
     }
     if (g_memEdit) {
-        ShowWindow(g_memEdit, g_page == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_memEdit, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_memEdit, !g_launching);
     }
     if (g_resetGameBtn) {
-        ShowWindow(g_resetGameBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_resetGameBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_resetGameBtn, !g_launching);
     }
     if (g_resetJavaBtn) {
-        ShowWindow(g_resetJavaBtn, g_page == 1 ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_resetJavaBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_resetJavaBtn, !g_launching);
     }
     if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
@@ -761,38 +881,38 @@ static void draw_texts(HDC dc, const Layout *l) {
             draw_description(dc, l, entry->description);
         }
     } else {
-        WCHAR memText[64];
         WCHAR profile[96];
         draw_text(dc, L"Settings", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"GAME PATH", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
-
-        draw_text(dc, L"JAVA PATH", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
-                  l->card.x + 8, 122, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
-
-        draw_text(dc, L"MEMORY", l->card.x + 8, 146, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, L"MB", l->card.x + 106, 162, 30, 18, g_font22, RGB(197, 199, 205),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, L"(1024 - 32768)", l->card.x + 138, 164, 140, 16, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-
-        draw_text(dc, L"PROFILE", l->card.x + 8, 186, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        wsprintfW(profile, L"%s  (fixed)", g_settings.username);
-        draw_text(dc, profile, l->card.x + 8, 202, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-        draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
-                  l->card.x + 8, 224, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        if (g_settingsTab == 0) {
+            draw_text(dc, L"GAME PATH", l->card.x + 8, 104, l->card.w - 144, 12, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            draw_text(dc, g_settings.gameDir, l->card.x + 8, 120, l->card.w - 144, 18, g_font22,
+                      RGB(197, 199, 205), DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
+            draw_text(dc, L"JAVA PATH", l->card.x + 8, 140, l->card.w - 144, 12, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
+                      l->card.x + 8, 156, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
+        } else if (g_settingsTab == 1) {
+            draw_text(dc, L"MEMORY", l->card.x + 8, 104, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            draw_text(dc, L"MB", l->card.x + 106, 122, 30, 18, g_font22, RGB(197, 199, 205),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            draw_text(dc, L"(1024 - 32768)", l->card.x + 138, 124, 140, 16, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        } else {
+            draw_text(dc, L"PROFILE", l->card.x + 8, 104, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            wsprintfW(profile, L"%s  (fixed)", g_settings.username);
+            draw_text(dc, profile, l->card.x + 8, 120, l->card.w - 16, 18, g_font22, RGB(197, 199, 205),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+            draw_text(dc, g_versionFound ? g_versionId : L"No Minecraft version found",
+                      l->card.x + 8, 142, l->card.w - 16, 14, g_font16, RGB(126, 130, 138),
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        }
     }
 
 
@@ -1043,6 +1163,8 @@ static void handle_command(int id) {
     switch (id) {
         case IDC_SETTINGS:
             g_page = 1;
+            g_settingsTab = 0;
+            if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
             if (g_memEdit) {
                 WCHAR memBuf[32];
                 wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
@@ -1316,6 +1438,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 draw_list_item((const DRAWITEMSTRUCT *)lp);
                 return TRUE;
             }
+            if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_TAB_LOCAL) {
+                draw_tab_item((const DRAWITEMSTRUCT *)lp);
+                return TRUE;
+            }
             break;
         case WM_MEASUREITEM: {
             MEASUREITEMSTRUCT *mis = (MEASUREITEMSTRUCT *)lp;
@@ -1323,7 +1449,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 mis->itemHeight = (UINT)(22 * g_scale + 0.5f);
                 return TRUE;
             }
+            if (mis->CtlID == IDC_SETTINGS_TAB) {
+                mis->itemWidth = (UINT)(110 * g_scale + 0.5f);
+                mis->itemHeight = (UINT)(26 * g_scale + 0.5f);
+                return TRUE;
+            }
             break;
+        }
+        case WM_NOTIFY: {
+            NMHDR *nh = (NMHDR *)lp;
+            if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL) {
+                g_settingsTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
+                sync_page_controls();
+                InvalidateRect(hwnd, 0, FALSE);
+            }
+            return 0;
         }
         case WM_COMMAND: {
             int id = LOWORD(wp);
@@ -1513,6 +1653,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     int dpi;
     (void)hp;
     (void)cmdline;
+    init_tab_control_support();
     set_dpi_awareness();
     ZeroMemory(&si, sizeof(si));
     si.GdiplusVersion = 1;

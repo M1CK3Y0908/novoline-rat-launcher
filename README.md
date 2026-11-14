@@ -33,7 +33,7 @@ dist\NovolineLauncher.exe
 - 数据尚未返回时，左侧显示 `Loading...`，右侧显示加载提示；不会显示任何本地内置版本列表。
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
-- `Settings`：显示游戏目录、Java Path、内存和离线档案；可打开游戏目录、浏览选择 Java、用 Reset 恢复默认路径、调整内存。
+- `Settings`：使用原生 SysTabControl32 分为 `Paths` / `Game` / `Profile` 三页；Paths 管理游戏目录和 Java Path，Game 调整内存，Profile 查看档案与版本。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
 - 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待状态只显示文字，不显示加载图标；关闭为红色 #FF3B30 电源符号，按 80% 大小绘制并向上偏移。
 - 启动按钮上方有 5px 状态色条：平时隐藏；点击启动后显示主题色流光并显示 `Waiting for the game`，检测到游戏窗口后变为绿色呼吸效果和 `Running`，失败为红色流光。
