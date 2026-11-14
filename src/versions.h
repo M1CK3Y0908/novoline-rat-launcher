@@ -22,7 +22,6 @@ typedef struct VersionList {
     VersionEntry items[VERSION_LIST_MAX];
 } VersionList;
 
-void versions_fallback(VersionList *list);
 int versions_parse_utf8(const char *data, int length, VersionList *list);
 int versions_fetch(VersionList *list);
 

@@ -17,39 +17,6 @@ static void copy_w(WCHAR *dst, int cap, const WCHAR *src) {
     dst[i] = 0;
 }
 
-static void fallback_entry(VersionList *list, int index, const WCHAR *type, const WCHAR *date,
-                           const WCHAR *description) {
-    VersionEntry *e;
-    if (!list || index < 0 || index >= VERSION_LIST_MAX) return;
-    e = &list->items[index];
-    ZeroMemory(e, sizeof(*e));
-    wsprintfW(e->title, L"Novoline %s #%s", type, date);
-    copy_w(e->released, 64, L"Released ... days ago");
-    copy_w(e->description, VERSION_DESC_CAP, description);
-    list->count = index + 1;
-}
-
-void versions_fallback(VersionList *list) {
-    if (!list) return;
-    ZeroMemory(list, sizeof(*list));
-    fallback_entry(list, 0, L"Release", L"100421",
-        L"[/] Fixed crashes caused by loading scripts\n"
-        L"[/] Fixed connection timeout issue on Hypixel (note: please test this)\n"
-        L"[/] Fixed 'module may not be registered twice' error");
-    fallback_entry(list, 1, L"Release", L"100421",
-        L"[/] Fixed crashes caused by loading scripts\n"
-        L"[/] Fixed connection timeout issue on Hypixel (note: please test this)\n"
-        L"[/] Fixed 'module may not be registered twice' error");
-    fallback_entry(list, 2, L"Beta", L"100221",
-        L"[/] Added new module manager\n"
-        L"[/] Improved render performance\n"
-        L"[/] Fixed several crashes");
-    fallback_entry(list, 3, L"Beta", L"100121",
-        L"[/] Initial beta release\n"
-        L"[/] Added script loader\n"
-        L"[/] Various stability fixes");
-}
-
 static void set_release_date(VersionEntry *entry, const WCHAR *date) {
     int i, len, yy, mm, dd;
     if (!entry) return;

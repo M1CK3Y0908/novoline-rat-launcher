@@ -109,20 +109,11 @@ static int dir_exists(const WCHAR *path) {
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-static void sappend(WCHAR *dst, const WCHAR *src, int cap) {
-    int n, i = 0;
-    if (!dst || !src || cap <= 0) return;
-    n = (int)wcslen(dst);
-    while (src[i] && n + i < cap - 1) {
-        dst[n + i] = src[i];
-        i++;
-    }
-    dst[n + i] = 0;
-}
-
 static HFONT g_font24, g_font22, g_font20, g_font16, g_font36;
 static float g_fontScale = -1.0f;
 static VersionList g_versions;
+static int g_versionsLoading = 1;
+static WCHAR g_versionsError[256];
 
 typedef struct LaunchResult {
     WCHAR message[512];
@@ -361,7 +352,12 @@ static void populate_version_list(void) {
     }
     if (g_versions.count <= 0) g_selected = 0;
     else if (g_selected >= g_versions.count) g_selected = g_versions.count - 1;
-    if (g_versions.count > 0) SendMessageW(g_list, LB_SETCURSEL, (WPARAM)g_selected, 0);
+    if (g_versions.count > 0) {
+        SendMessageW(g_list, LB_SETCURSEL, (WPARAM)g_selected, 0);
+        ShowWindow(g_list, SW_SHOW);
+    } else {
+        ShowWindow(g_list, SW_HIDE);
+    }
     InvalidateRect(g_list, 0, FALSE);
 }
 
@@ -462,7 +458,7 @@ static void layout_controls(void) {
 static void sync_page_controls(void) {
     if (g_launchBtn) {
         SetWindowTextW(g_launchBtn, g_page == 1 ? L"Done" : (g_launching ? L"Launching..." : L"Launch"));
-        EnableWindow(g_launchBtn, !g_launching);
+        EnableWindow(g_launchBtn, g_page == 1 || (!g_launching && g_versions.count > 0));
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
     if (g_logoutBtn) EnableWindow(g_logoutBtn, !g_launching);
@@ -561,15 +557,37 @@ static void draw_description(HDC dc, const Layout *l, const WCHAR *description) 
 }
 
 static void draw_texts(HDC dc, const Layout *l) {
+    if (g_versions.count == 0) {
+        draw_text(dc, g_versionsLoading ? L"Loading..." : L"Failed to load",
+                  10, 8, 184, 18, g_font24, RGB(158, 161, 168),
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
 
     if (g_page == 0) {
-        const VersionEntry *entry = (g_versions.count > 0) ? &g_versions.items[g_selected] : 0;
-        draw_text(dc, entry ? entry->title : L"Novoline", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
-                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        draw_text(dc, entry && entry->released[0] ? entry->released : L"Released ... days ago",
-                  l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
-                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        draw_description(dc, l, entry ? entry->description : L"");
+        if (g_versions.count == 0) {
+            if (g_versionsLoading) {
+                draw_text(dc, L"Loading versions...", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
+                          DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+                draw_text(dc, L"Fetching version data from GitHub...", l->mainX, 30, l->mainW, 18,
+                          g_font24, RGB(158, 161, 168), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            } else {
+                draw_text(dc, L"Unable to load versions", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
+                          DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+                draw_text(dc, g_versionsError[0] ? g_versionsError : L"Please check your network connection.",
+                          l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
+                          DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
+            return;
+        }
+        {
+            const VersionEntry *entry = &g_versions.items[g_selected];
+            draw_text(dc, entry->title, l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
+                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            draw_text(dc, entry->released[0] ? entry->released : L"Released ... days ago",
+                      l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
+                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            draw_description(dc, l, entry->description);
+        }
     } else {
         WCHAR memText[64];
         WCHAR profile[96];
@@ -711,7 +729,10 @@ static void apply_initial_size(HWND hwnd, int dpi) {
 static DWORD WINAPI versions_thread(LPVOID param) {
     VersionList *list = (VersionList *)calloc(1, sizeof(VersionList));
     (void)param;
-    if (!list) return 0;
+    if (!list) {
+        PostMessageW(g_hwnd, WM_APP_VERSIONS_DONE, 0, 0);
+        return 0;
+    }
     if (versions_fetch(list)) {
         PostMessageW(g_hwnd, WM_APP_VERSIONS_DONE, 1, (LPARAM)list);
     } else {
@@ -1062,23 +1083,20 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_APP_VERSIONS_DONE: {
             VersionList *remote = (VersionList *)lp;
             int ok = (int)wp;
-            if (remote) {
-                if (ok && remote->count > 0) {
-                    memcpy(&g_versions, remote, sizeof(VersionList));
-                    g_selected = 0;
-                    populate_version_list();
-                    InvalidateRect(hwnd, 0, FALSE);
-                } else {
-                    WCHAR text[320];
-                    scopy(text, L"Version list update failed", 320);
-                    if (remote->error[0]) {
-                        sappend(text, L": ", 320);
-                        sappend(text, remote->error, 320);
-                    }
-                    set_toast(text, 5000, 1);
-                }
-                free(remote);
+            g_versionsLoading = 0;
+            if (ok && remote && remote->count > 0) {
+                memcpy(&g_versions, remote, sizeof(VersionList));
+                g_selected = 0;
+                g_versionsError[0] = 0;
+            } else {
+                g_versions.count = 0;
+                if (remote && remote->error[0]) scopy(g_versionsError, remote->error, 256);
+                else scopy(g_versionsError, L"Please check your network connection.", 256);
             }
+            populate_version_list();
+            sync_page_controls();
+            if (remote) free(remote);
+            InvalidateRect(hwnd, 0, FALSE);
             return 0;
         }
         case WM_CLOSE:
@@ -1146,7 +1164,6 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     si.GdiplusVersion = 1;
     if (GdiplusStartup(&g_gdiplusToken, &si, 0) != 0) return 0;
     settings_load(&g_settings);
-    versions_fallback(&g_versions);
     g_selected = 0;
     g_appIcon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
     if (!g_appIcon) set_window_icon();
@@ -1186,6 +1203,13 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     {
         HANDLE th = CreateThread(0, 0, versions_thread, 0, 0, 0);
         if (th) CloseHandle(th);
+        else {
+            g_versionsLoading = 0;
+            scopy(g_versionsError, L"Could not start version fetch thread.", 256);
+            populate_version_list();
+            sync_page_controls();
+            InvalidateRect(g_hwnd, 0, FALSE);
+        }
     }
     while (GetMessageW(&msg, 0, 0, 0) > 0) {
         TranslateMessage(&msg);
