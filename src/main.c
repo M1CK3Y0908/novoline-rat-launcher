@@ -1083,16 +1083,14 @@ static void draw_play_icon(HDC dc, int cx, int cy, int size) {
     int width = (int)(size * 0.866f);
     POINT p[3];
     HBRUSH brush = CreateSolidBrush(RGB(66, 200, 120));
-    HPEN pen = CreatePen(PS_SOLID, (int)(2 * g_scale + 0.5f), RGB(20, 96, 52));
     HGDIOBJ oldBrush = SelectObject(dc, brush);
-    HGDIOBJ oldPen = SelectObject(dc, pen);
+    HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
     p[0].x = cx - width / 2; p[0].y = cy - half;
     p[1].x = cx - width / 2; p[1].y = cy + half;
     p[2].x = cx + width / 2; p[2].y = cy;
     Polygon(dc, p, 3);
     SelectObject(dc, oldPen);
     SelectObject(dc, oldBrush);
-    DeleteObject(pen);
     DeleteObject(brush);
 }
 
@@ -1130,26 +1128,27 @@ static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
 }
 
 static void draw_octagon_icon(HDC dc, int cx, int cy, int size) {
-    int half = size / 2;
-    int cut = (int)(size * 0.2929f);
-    POINT p[8];
-    HBRUSH brush = CreateSolidBrush(RGB(214, 64, 64));
-    HPEN pen = CreatePen(PS_SOLID, (int)(2 * g_scale + 0.5f), RGB(110, 22, 22));
-    HGDIOBJ oldBrush = SelectObject(dc, brush);
-    HGDIOBJ oldPen = SelectObject(dc, pen);
-    p[0].x = cx - half + cut; p[0].y = cy - half;
-    p[1].x = cx + half - cut; p[1].y = cy - half;
-    p[2].x = cx + half; p[2].y = cy - half + cut;
-    p[3].x = cx + half; p[3].y = cy + half - cut;
-    p[4].x = cx + half - cut; p[4].y = cy + half;
-    p[5].x = cx - half + cut; p[5].y = cy + half;
-    p[6].x = cx - half; p[6].y = cy + half - cut;
-    p[7].x = cx - half; p[7].y = cy - half + cut;
-    Polygon(dc, p, 8);
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(pen);
-    DeleteObject(brush);
+    GpGraphics *graphics = 0;
+    GpSolidFill *fill = 0;
+    GpPointF p[8];
+    float radius = size * 0.54f;
+    float a = radius * 0.9238795f;
+    float b = radius * 0.3826834f;
+    if (GdipCreateFromHDC(dc, &graphics) != 0) return;
+    GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
+    p[0].X = (float)cx + a; p[0].Y = (float)cy + b;
+    p[1].X = (float)cx + b; p[1].Y = (float)cy + a;
+    p[2].X = (float)cx - b; p[2].Y = (float)cy + a;
+    p[3].X = (float)cx - a; p[3].Y = (float)cy + b;
+    p[4].X = (float)cx - a; p[4].Y = (float)cy - b;
+    p[5].X = (float)cx - b; p[5].Y = (float)cy - a;
+    p[6].X = (float)cx + b; p[6].Y = (float)cy - a;
+    p[7].X = (float)cx + a; p[7].Y = (float)cy - b;
+    if (GdipCreateSolidFill((ARGB)0xFFD64040, &fill) == 0) {
+        GdipFillPolygon(graphics, (GpBrush *)fill, p, 8, GpFillModeWinding);
+        GdipDeleteBrush((GpBrush *)fill);
+    }
+    GdipDeleteGraphics(graphics);
 }
 
 static void draw_owner_button(const DRAWITEMSTRUCT *d) {
