@@ -643,7 +643,7 @@ static void draw_shapes(GpGraphics *g, const Layout *l) {
 static void draw_description(HDC dc, const Layout *l, const WCHAR *description) {
     WCHAR buffer[VERSION_DESC_CAP];
     WCHAR *p;
-    int y = 50;
+    int y = 30;
     int lines = 0;
     if (!description || !description[0]) {
         draw_text(dc, L"No description available.", l->mainX, y, l->mainW, 18, g_font24,
@@ -719,9 +719,6 @@ static void draw_texts(HDC dc, const Layout *l) {
         {
             const VersionEntry *entry = &g_versions.items[g_selected];
             draw_text(dc, entry->title, l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
-                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-            draw_text(dc, entry->released[0] ? entry->released : L"Released ... days ago",
-                      l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                       DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
             draw_description(dc, l, entry->description);
         }
@@ -1198,11 +1195,11 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
         if (d->CtlID == IDC_LAUNCH && g_page == 0) {
             if (g_launchState == LAUNCH_IDLE || g_launchState == LAUNCH_FAILED) iconKind = 1;
             else if (g_launchState == LAUNCH_STARTING) iconKind = 2;
-            else if (g_launchState == LAUNCH_RUNNING) iconKind = 3;
+            else if (g_launchState == LAUNCH_RUNNING && hovered) iconKind = 3;
         }
         if (iconKind) {
             SIZE textSize;
-            int iconSize = (int)(20 * g_scale + 0.5f);
+            int iconSize = (int)(16 * g_scale + 0.5f);
             int gap = (int)(8 * g_scale + 0.5f);
             int total, left, cy;
             RECT tr;
