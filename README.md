@@ -23,6 +23,7 @@ dist\NovolineLauncher.exe
 
 - 使用 **Win32 原生标题栏**：窗口标题、标题栏图标、最小化 / 最大化 / 关闭按钮全部由 Windows 系统绘制，不使用自绘标题栏元素。
 - 标题栏颜色：Windows 11 通过 DWM 设置为与客户区背景相同的 `#212429`；Windows 10 不支持逐窗口设置标题栏颜色，保持系统原生强调色。
+- 应用图标提取自 OpenNovoline 主菜单的 `novoline_blue.png`，生成 16 / 20 / 24 / 32 / 40 / 48 / 64 / 96 / 128 / 256 多尺寸 ICO；任务栏、标题栏和资源管理器会按实际 DPI 选择对应尺寸。
 - 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用原生 `BUTTON` 控件（Settings / Log out / Launch / Open / Detect / - / + / Done），没有自绘按钮或列表。
 - 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
@@ -57,14 +58,18 @@ src\                           C 源码
   gdiplus_flat.h               GDI+ 扁平 API 声明
   win_extra.h                  TCC 缺失的系统 API 声明
 assets\
-  novoline.ico / novoline_1024.png
+  novoline.ico                 多尺寸应用图标
+  novoline_1024.png            1024 图标母版
+  icon_*.png                   各尺寸预览
+  logo_source.png              OpenNovoline 主菜单原始图标
+  icon_sizes_preview.png       多尺寸对比图
   app.manifest
   preview.png                 实际运行截图
   reference.jpg               参考图
 tools\
   tcc\                         便携式 TinyCC 编译器
   rcedit.exe                   写入图标 / 版本信息 / Manifest
-  make_icon.py                 重新生成图标
+  make_icon.py                 从 logo_source.png 重新生成全部图标尺寸
 build.ps1                      一键重新编译
 ```
 

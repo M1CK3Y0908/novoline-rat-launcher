@@ -93,6 +93,16 @@ static DWORD g_toastUntil = 0;
 static WCHAR g_versionId[128];
 static int g_versionFound = 0;
 static HICON g_appIcon = 0;
+static HICON g_appIconSm = 0;
+
+static HICON load_app_icon(int cx, int cy) {
+    WCHAR path[MAX_PATH];
+    HICON icon = 0;
+    UINT iconId = 0;
+    if (!GetModuleFileNameW(0, path, MAX_PATH)) return 0;
+    if (PrivateExtractIconsW(path, 0, cx, cy, &icon, &iconId, 1, 0) != 1) return 0;
+    return icon;
+}
 
 static void scopy(WCHAR *dst, const WCHAR *src, int cap) {
     int i = 0;
@@ -866,59 +876,6 @@ static void apply_window_look(HWND hwnd) {
     }
 }
 
-static void set_window_icon(void) {
-    HDC screen, mem;
-    HBITMAP bmp, mask, old;
-    void *bits = 0;
-    BITMAPINFO bi;
-    ICONINFO ii;
-    int x, y;
-    int size = 32;
-    screen = GetDC(0);
-    mem = CreateCompatibleDC(screen);
-    ZeroMemory(&bi, sizeof(bi));
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = size;
-    bi.bmiHeader.biHeight = -size;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    bmp = CreateDIBSection(mem, &bi, DIB_RGB_COLORS, &bits, 0, 0);
-    mask = CreateBitmap(size, size, 1, 1, 0);
-    if (bmp) {
-        old = (HBITMAP)SelectObject(mem, bmp);
-        {
-            HBRUSH bg = CreateSolidBrush(RGB(30, 33, 39));
-            RECT r;
-            r.left = 0; r.top = 0; r.right = size; r.bottom = size;
-            FillRect(mem, &r, bg);
-            DeleteObject(bg);
-        }
-        {
-            HPEN pen = CreatePen(PS_SOLID, 5, RGB(102, 90, 235));
-            HGDIOBJ op = SelectObject(mem, pen);
-            MoveToEx(mem, 7, 28, 0); LineTo(mem, 11, 4);
-            LineTo(mem, 21, 29); LineTo(mem, 27, 4);
-            SelectObject(mem, op);
-            DeleteObject(pen);
-        }
-        if (bits) {
-            unsigned char *p = (unsigned char *)bits;
-            for (y = 0; y < size; y++) for (x = 0; x < size; x++) p[(y * size + x) * 4 + 3] = 255;
-        }
-        SelectObject(mem, old);
-        ZeroMemory(&ii, sizeof(ii));
-        ii.fIcon = TRUE;
-        ii.hbmColor = bmp;
-        ii.hbmMask = mask;
-        g_appIcon = CreateIconIndirect(&ii);
-        DeleteObject(bmp);
-    }
-    if (mask) DeleteObject(mask);
-    DeleteDC(mem);
-    ReleaseDC(0, screen);
-}
-
 static void draw_list_item(const DRAWITEMSTRUCT *d) {
     WCHAR label[256];
     COLORREF fill;
@@ -1181,15 +1138,17 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     if (GdiplusStartup(&g_gdiplusToken, &si, 0) != 0) return 0;
     settings_load(&g_settings);
     g_selected = 0;
-    g_appIcon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
-    if (!g_appIcon) set_window_icon();
+    g_appIcon = load_app_icon(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+    g_appIconSm = load_app_icon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+    if (!g_appIcon) g_appIcon = CopyIcon(LoadIconW(0, IDI_APPLICATION));
+    if (!g_appIconSm) g_appIconSm = g_appIcon;
     ZeroMemory(&wc, sizeof(wc));
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hi;
-    wc.hIcon = g_appIcon ? g_appIcon : LoadIconW(0, IDI_APPLICATION);
-    wc.hIconSm = wc.hIcon;
+    wc.hIcon = g_appIcon;
+    wc.hIconSm = g_appIconSm;
     wc.hCursor = LoadCursorW(0, IDC_ARROW);
     wc.hbrBackground = CreateSolidBrush(RGB_BG);
     wc.lpszClassName = APP_CLASS;
@@ -1199,6 +1158,8 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
                              CW_USEDEFAULT, CW_USEDEFAULT, 1200, 800, 0, 0, hi, 0);
     if (!g_hwnd) return 0;
     SetWindowTextW(g_hwnd, APP_TITLE);
+    SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_appIcon);
+    SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_appIconSm);
     dpi = get_window_dpi(g_hwnd);
     g_scale = (float)dpi / 96.0f;
     apply_initial_size(g_hwnd, dpi);
@@ -1232,6 +1193,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
         DispatchMessageW(&msg);
     }
     destroy_fonts();
+    if (g_appIconSm && g_appIconSm != g_appIcon) DestroyIcon(g_appIconSm);
     if (g_appIcon) DestroyIcon(g_appIcon);
     GdiplusShutdown(g_gdiplusToken);
     return 0;
