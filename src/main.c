@@ -1183,7 +1183,7 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
                 if (capHeight >= 8) iconSize = capHeight;
             } else if (iconKind == 3) {
                 iconSize = (iconSize * 4) / 5;
-                iconOffsetY = -(int)(2 * g_scale + 0.5f);
+                iconOffsetY = -(int)(1 * g_scale + 0.5f);
             }
             total = iconSize + gap + textSize.cx;
             left = d->rcItem.left + ((d->rcItem.right - d->rcItem.left) - total) / 2;
