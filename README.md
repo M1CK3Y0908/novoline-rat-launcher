@@ -38,7 +38,8 @@ dist\NovolineLauncher.exe
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`
   - 默认 Java 目录：`C:\M1CK3Y\novoline.rat\java`
-  - 首次启动先检查 `java\bin\java.exe`；缺失时下载 `https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/java.zip`，直接解压到 `java`，解压成功后删除 `java.zip`；
+  - 参考 PCL2 的 Java 版本选择：`1.8.8 + OptiFine` 固定使用 Java 8；目标 `java` 版本不兼容时，自动查找本机 Java 8，仍找不到则下载 8u202 JRE 到 `java8`；
+  - 只有版本需要 Java 17 时，才下载 `java.zip` 并解压到 `java`；
   - 根据 `versions.rat` 中当前选中版本的 `jar` / `json` 地址，下载到 `versions\<版本 ID>\`；
   - 从 `libraries.minecraft.net` 补齐版本依赖，并将 native 解压到 `natives\<版本 ID>\`；
   - 自动解析版本 JSON、启动参数和资源索引；
@@ -46,7 +47,7 @@ dist\NovolineLauncher.exe
   - 使用离线 UUID / accessToken=0，不读取、不保存任何微软账号密码；
   - 启动日志：`C:\M1CK3Y\novoline.rat\logs\launcher.log` 和 `game.log`。
 
-> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 压缩包约 40 MB，解压完成后会自动删除下载的 `java.zip`。
+> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 8 回退包约 37 MB，`java.zip` 约 40 MB；下载的压缩包在解压成功后会自动删除。
 
 ## 文件结构
 
