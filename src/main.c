@@ -350,14 +350,14 @@ static Layout make_layout(void) {
     l.detectBtn.y = 112.0f;
     l.detectBtn.w = 60.0f;
     l.detectBtn.h = 24.0f;
-    l.resetGameBtn.x = l.card.x + 8.0f;
-    l.resetGameBtn.y = 80.0f;
+    l.resetGameBtn.x = l.card.x + l.card.w - 130.0f;
+    l.resetGameBtn.y = 72.0f;
     l.resetGameBtn.w = 54.0f;
-    l.resetGameBtn.h = 22.0f;
-    l.resetJavaBtn.x = l.card.x + 8.0f;
-    l.resetJavaBtn.y = 120.0f;
+    l.resetGameBtn.h = 24.0f;
+    l.resetJavaBtn.x = l.card.x + l.card.w - 130.0f;
+    l.resetJavaBtn.y = 112.0f;
     l.resetJavaBtn.w = 54.0f;
-    l.resetJavaBtn.h = 22.0f;
+    l.resetJavaBtn.h = 24.0f;
     l.memEdit.x = l.card.x + 8.0f;
     l.memEdit.y = 160.0f;
     l.memEdit.w = 90.0f;
@@ -769,13 +769,13 @@ static void draw_texts(HDC dc, const Layout *l) {
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"GAME PATH", l->card.x + 8, 66, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        draw_text(dc, g_settings.gameDir, l->card.x + 68, 82, l->card.w - 146, 18, g_font22, RGB(197, 199, 205),
+        draw_text(dc, g_settings.gameDir, l->card.x + 8, 82, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
         draw_text(dc, L"JAVA PATH", l->card.x + 8, 106, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         draw_text(dc, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder",
-                  l->card.x + 68, 122, l->card.w - 146, 18, g_font22, RGB(197, 199, 205),
+                  l->card.x + 8, 122, l->card.w - 144, 18, g_font22, RGB(197, 199, 205),
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_PATH_ELLIPSIS);
 
         draw_text(dc, L"MEMORY", l->card.x + 8, 146, l->card.w - 88, 12, g_font16, RGB(126, 130, 138),
