@@ -8,6 +8,7 @@
 #include <string.h>
 #include <wchar.h>
 #include <math.h>
+#include <stdint.h>
 #include "gdiplus_flat.h"
 #include "launcher.h"
 #include "versions.h"
@@ -204,6 +205,78 @@ static void apply_control_region(HWND hwnd, int radius) {
                                 radius * 2, radius * 2);
     if (region) SetWindowRgn(hwnd, region, TRUE);
 }
+
+/* PCL-compatible legacy UUID and default Steve/Alex head selection. */
+static unsigned int pcl_stable_hash(const WCHAR *text) {
+    uint32_t hash1 = 5381, hash2 = 5381;
+    int i, length = (int)wcslen(text);
+    for (i = 0; i < length; i += 2) {
+        hash1 = ((hash1 << 5) + hash1) ^ (uint32_t)text[i];
+        if (i == length - 1) break;
+        hash2 = ((hash2 << 5) + hash2) ^ (uint32_t)text[i + 1];
+    }
+    return (unsigned int)(hash1 + hash2 * 1566083941u);
+}
+
+static void pcl_legacy_uuid(const WCHAR *name, WCHAR out[33]) {
+    WCHAR lenHex[17], hashHex[17], full[33];
+    unsigned int length = (unsigned int)wcslen(name);
+    unsigned int hash = pcl_stable_hash(name);
+    int i;
+    wsprintfW(lenHex, L"%X", length);
+    wsprintfW(hashHex, L"%X", hash);
+    for (i = (int)wcslen(lenHex); i < 16; i++) lenHex[i] = L'0';
+    lenHex[16] = 0;
+    for (i = (int)wcslen(hashHex); i < 16; i++) hashHex[i] = L'0';
+    hashHex[16] = 0;
+    wsprintfW(full, L"%s%s", lenHex, hashHex);
+    for (i = 0; i < 12; i++) out[i] = full[i];
+    out[12] = L'3';
+    for (i = 0; i < 3; i++) out[13 + i] = full[13 + i];
+    out[16] = L'9';
+    for (i = 0; i < 15; i++) out[17 + i] = full[17 + i];
+    out[32] = 0;
+}
+
+static int hex_value(WCHAR c) {
+    if (c >= L'0' && c <= L'9') return c - L'0';
+    if (c >= L'a' && c <= L'f') return c - L'a' + 10;
+    if (c >= L'A' && c <= L'F') return c - L'A' + 10;
+    return 0;
+}
+
+static int pcl_offline_is_alex(const WCHAR *name) {
+    WCHAR uuid[33];
+    int a, b, c, d;
+    pcl_legacy_uuid(name ? name : L"", uuid);
+    a = hex_value(uuid[7]);
+    b = hex_value(uuid[15]);
+    c = hex_value(uuid[23]);
+    d = hex_value(uuid[31]);
+    return (a ^ b ^ c ^ d) & 1;
+}
+
+static const unsigned int pcl_steve_head[64] = {
+    0xFF332411, 0xFF332411, 0xFF3F2A15, 0xFF3F2A15, 0xFF3F2A15, 0xFF3F2A15, 0xFF332411, 0xFF2B1E0D,
+    0xFF241808, 0xFF332411, 0xFF332411, 0xFF3F2A15, 0xFF3F2A15, 0xFF332411, 0xFF3F2A15, 0xFF332411,
+    0xFF2B1E0D, 0xFF9B6349, 0xFFB3795E, 0xFFB7836B, 0xFFB3795E, 0xFFAA7259, 0xFF9B6349, 0xFF342512,
+    0xFF9B6349, 0xFFAA7259, 0xFFB3795E, 0xFFB3795E, 0xFFAA7259, 0xFFAA7259, 0xFFAA7259, 0xFF9B6349,
+    0xFFAA7259, 0xFFFFFFFF, 0xFF523D89, 0xFFAA7259, 0xFF9B6349, 0xFF523D89, 0xFFFFFFFF, 0xFFAA7259,
+    0xFF9B6349, 0xFFAA7259, 0xFFAA7259, 0xFF6A4030, 0xFF6A4030, 0xFFAA7259, 0xFFAA7259, 0xFF9B6349,
+    0xFF90593F, 0xFF8F5E3E, 0xFF492510, 0xFF774235, 0xFF774235, 0xFF421D0A, 0xFF8F5E3E, 0xFF815339,
+    0xFF94603E, 0xFF815339, 0xFF421D0A, 0xFF492510, 0xFF421D0A, 0xFF492510, 0xFF815339, 0xFF8F5E3E
+};
+
+static const unsigned int pcl_alex_head[64] = {
+    0xFFE58D3F, 0xFFF3A858, 0xFFEB983F, 0xFFF3A858, 0xFFE58D3F, 0xFFEB983F, 0xFFF3A858, 0xFFE58D3F,
+    0xFFEB983F, 0xFFF3A858, 0xFFE58D3F, 0xFFEB983F, 0xFFE58D3F, 0xFFE58D3F, 0xFFEB983F, 0xFFF3A858,
+    0xFFEB983F, 0xFFE58D3F, 0xFFEB983F, 0xFFE58D3F, 0xFFDFC4A2, 0xFFDFC4A2, 0xFFE58D3F, 0xFFEB983F,
+    0xFFEB983F, 0xFFEB983F, 0xFFE58D3F, 0xFFEBD0B0, 0xFFEFDABF, 0xFFEBD0B0, 0xFFEBD0B0, 0xFFE58D3F,
+    0xFFEBD0B0, 0xFFFFFFFF, 0xFF236224, 0xFFEFDABF, 0xFFEFDABF, 0xFF236224, 0xFFFFFFFF, 0xFFEBD0B0,
+    0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF,
+    0xFFEFDABF, 0xFFEFDABF, 0xFFEFBAB1, 0xFFEFBBB1, 0xFFEFBBB1, 0xFFEFDABF, 0xFFEFDABF, 0xFFEBD0B0,
+    0xFFEBD0B0, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEBD0B0, 0xFFDFC4A2
+};
 static int g_launching = 0;
 #define LAUNCH_IDLE     0
 #define LAUNCH_STARTING 1
@@ -1676,6 +1749,25 @@ static void draw_texts(HDC dc, const Layout *l) {
 }
 
 
+static void draw_pcl_offline_head(HDC dc, int x, int y, int size, const WCHAR *name) {
+    const unsigned int *pixels = pcl_offline_is_alex(name) ? pcl_alex_head : pcl_steve_head;
+    int row, col;
+    for (row = 0; row < 8; row++) {
+        for (col = 0; col < 8; col++) {
+            unsigned int argb = pixels[row * 8 + col];
+            RECT r;
+            HBRUSH brush;
+            r.left = x + col * size / 8;
+            r.top = y + row * size / 8;
+            r.right = x + (col + 1) * size / 8;
+            r.bottom = y + (row + 1) * size / 8;
+            brush = CreateSolidBrush(RGB((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF));
+            FillRect(dc, &r, brush);
+            DeleteObject(brush);
+        }
+    }
+}
+
 static void draw_account_avatar(HDC dc, int x, int y, int size, const AccountEntry *a) {
     WCHAR path[PATH_CAP];
     GpImage *image = 0;
@@ -1690,21 +1782,7 @@ static void draw_account_avatar(HDC dc, int x, int y, int size, const AccountEnt
         GdipDisposeImage(image);
         return;
     }
-    {
-        HBRUSH bg = CreateSolidBrush(RGB(38, 41, 47));
-        HBRUSH skin = CreateSolidBrush(RGB(198, 154, 111));
-        HBRUSH hair = CreateSolidBrush(RGB(58, 43, 34));
-        HBRUSH dark = CreateSolidBrush(RGB(35, 30, 27));
-        FillRect(dc, &(RECT){ x, y, x + size, y + size }, bg);
-        FillRect(dc, &(RECT){ x + size / 5, y + size / 6, x + size * 4 / 5, y + size * 5 / 6 }, skin);
-        FillRect(dc, &(RECT){ x + size / 5, y + size / 6, x + size * 4 / 5, y + size / 3 }, hair);
-        FillRect(dc, &(RECT){ x + size / 3, y + size / 2, x + size / 3 + size / 10, y + size / 2 + size / 9 }, dark);
-        FillRect(dc, &(RECT){ x + size * 3 / 5, y + size / 2, x + size * 3 / 5 + size / 10, y + size / 2 + size / 9 }, dark);
-        DeleteObject(bg);
-        DeleteObject(skin);
-        DeleteObject(hair);
-        DeleteObject(dark);
-    }
+    draw_pcl_offline_head(dc, x, y, size, a ? a->name : L"");
 }
 
 static void draw_account_item(const DRAWITEMSTRUCT *d) {
