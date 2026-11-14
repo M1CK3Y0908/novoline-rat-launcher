@@ -480,11 +480,13 @@ static void overdraw_tabs(HWND hwnd, HDC dc) {
     static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
     int count = (int)SendMessageW(hwnd, TCM_GETITEMCOUNT_LOCAL, 0, 0);
     int selected = g_settingsTab;
+    RECT client;
     int i;
+    GetClientRect(hwnd, &client);
     for (i = 0; i < count; i++) {
         RECT r;
         RECT bottom;
-        COLORREF fill = (i == selected) ? RGB_PANEL : RGB(24, 27, 32);
+        COLORREF fill = (i == selected) ? RGB_PANEL : RGB_BG;
         COLORREF border = (i == selected) ? RGB(72, 77, 90) : RGB_BORDER;
         COLORREF text = (i == selected) ? RGB(232, 234, 239) : RGB(150, 154, 162);
         HBRUSH brush;
@@ -492,6 +494,7 @@ static void overdraw_tabs(HWND hwnd, HDC dc) {
         HGDIOBJ oldPen;
         HGDIOBJ oldFont;
         if (!SendMessageW(hwnd, TCM_GETITEMRECT_LOCAL, (WPARAM)i, (LPARAM)&r)) continue;
+        r.bottom = client.bottom;
         brush = CreateSolidBrush(fill);
         FillRect(dc, &r, brush);
         DeleteObject(brush);
@@ -527,7 +530,7 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         RECT r;
         HBRUSH brush;
         GetClientRect(hwnd, &r);
-        brush = CreateSolidBrush(RGB_PANEL);
+        brush = CreateSolidBrush(RGB_BG);
         FillRect(dc, &r, brush);
         DeleteObject(brush);
         return 1;
@@ -538,7 +541,7 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         RECT r;
         HBRUSH brush;
         GetClientRect(hwnd, &r);
-        brush = CreateSolidBrush(RGB_PANEL);
+        brush = CreateSolidBrush(RGB_BG);
         FillRect(dc, &r, brush);
         DeleteObject(brush);
         overdraw_tabs(hwnd, dc);
@@ -550,7 +553,7 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         HBRUSH brush;
         HDC dc = (HDC)wp;
         GetClientRect(hwnd, &r);
-        brush = CreateSolidBrush(RGB_PANEL);
+        brush = CreateSolidBrush(RGB_BG);
         FillRect(dc, &r, brush);
         DeleteObject(brush);
         overdraw_tabs(hwnd, dc);
@@ -710,8 +713,7 @@ static void create_controls(HWND hwnd) {
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_JAVA, inst, 0);
     g_tab = CreateWindowExW(0, L"SysTabControl32", L"",
                             WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS |
-                                0x8000 /* TCS_FOCUSNEVER */ |
-                                0x0400 /* TCS_FIXEDWIDTH */,
+                                0x8000 /* TCS_FOCUSNEVER */,
                             0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS_TAB, inst, 0);
     if (g_tab) {
         set_window_theme_none(g_tab);
@@ -793,6 +795,7 @@ static void apply_control_fonts(void) {
     if (g_javaValue) SendMessageW(g_javaValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_profileValue) SendMessageW(g_profileValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_profileVersion) SendMessageW(g_profileVersion, WM_SETFONT, (WPARAM)g_font16, TRUE);
+    if (g_tab) SendMessageW(g_tab, WM_SETFONT, (WPARAM)g_font20, TRUE);
 }
 
 static void layout_controls(void) {
@@ -834,11 +837,6 @@ static void layout_controls(void) {
                  (int)(l.resetJavaBtn.x * g_scale + 0.5f), (int)(l.resetJavaBtn.y * g_scale + 0.5f),
                  (int)(l.resetJavaBtn.w * g_scale + 0.5f), (int)(l.resetJavaBtn.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
-    if (g_tab) {
-        int tw = (int)(((l.tab.w - 6.0f) / 3.0f) * g_scale + 0.5f);
-        int th = (int)(26 * g_scale + 0.5f);
-        SendMessageW(g_tab, TCM_SETITEMSIZE_LOCAL, 0, MAKELPARAM(tw, th));
-    }
     SetWindowPos(g_tab, 0,
                  (int)(l.tab.x * g_scale + 0.5f), (int)(l.tab.y * g_scale + 0.5f),
                  (int)(l.tab.w * g_scale + 0.5f), (int)(l.tab.h * g_scale + 0.5f),
@@ -984,8 +982,8 @@ static int system_panel_radius(void) {
 }
 
 static void draw_settings_shapes(GpGraphics *g, const Layout *l) {
-    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, l->card.y, l->card.w, l->card.h,
-          system_panel_radius(), 1);
+    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, 96.0f, l->card.w,
+          l->card.y + l->card.h - 96.0f, system_panel_radius(), 1);
 }
 
 static COLORREF blend_rgb(COLORREF a, COLORREF b, float t) {
@@ -1697,11 +1695,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             MEASUREITEMSTRUCT *mis = (MEASUREITEMSTRUCT *)lp;
             if (mis->CtlID == IDC_LIST) {
                 mis->itemHeight = (UINT)(22 * g_scale + 0.5f);
-                return TRUE;
-            }
-            if (mis->CtlID == IDC_SETTINGS_TAB) {
-                mis->itemWidth = (UINT)(110 * g_scale + 0.5f);
-                mis->itemHeight = (UINT)(26 * g_scale + 0.5f);
                 return TRUE;
             }
             break;
