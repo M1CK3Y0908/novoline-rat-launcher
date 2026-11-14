@@ -346,8 +346,8 @@ void settings_load(LauncherSettings *s) {
         }
     }
     free(wide);
-    /* Migrate the old AppData\.minecraft default to the game directory. */
-    if (!s->gameDir[0] || wcsstr(s->gameDir, L"AppData\\Roaming\\.minecraft")) {
+    /* Only choose a fallback when no game directory was saved. */
+    if (!s->gameDir[0]) {
         if (dir_exists(L"D:\\Minecraft\\.minecraft")) scopy(s->gameDir, L"D:\\Minecraft\\.minecraft", PATH_CAP);
         else scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
     }
