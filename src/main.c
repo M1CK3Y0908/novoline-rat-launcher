@@ -1087,7 +1087,7 @@ static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     }
     {
         int barW = (int)w;
-        int head = barW > 0 ? (int)((GetTickCount() / 9) % (DWORD)barW) : 0;
+        int head = barW > 0 ? (int)(((GetTickCount() * 2) / 9) % (DWORD)barW) : 0;
         int radius = barW / 3;
         if (radius < 12) radius = 12;
         fill_rect(g, base, x, y, w, h);
