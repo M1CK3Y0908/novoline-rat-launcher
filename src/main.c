@@ -990,17 +990,6 @@ static void create_controls(HWND hwnd) {
     g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"Remove",
                                          WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                          0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_REMOVE, inst, 0);
-    {
-        HWND buttons[] = {
-            g_settingsBtn, g_logoutBtn, g_launchBtn, g_openBtn, g_detectBtn,
-            g_resetGameBtn, g_resetJavaBtn, g_offlineBtn, g_msLoginBtn,
-            g_msLogoutBtn, g_msCompleteBtn, g_accountUseBtn, g_accountRemoveBtn
-        };
-        int i;
-        for (i = 0; i < (int)(sizeof(buttons) / sizeof(buttons[0])); i++) {
-            install_native_button(buttons[i]);
-        }
-    }
     if (g_offlineEdit) {
         set_window_theme_none(g_offlineEdit);
         SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
@@ -2604,22 +2593,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             return 0;
         }
-        case WM_CTLCOLORBTN: {
-            HWND ctl = (HWND)lp;
-            HDC hdc = (HDC)wp;
-            SetBkColor(hdc, RGB_PANEL);
-            if (ctl == g_accountUseBtn) {
-                SetTextColor(hdc, RGB(92, 200, 130));
-                if (!g_panelBrush) g_panelBrush = CreateSolidBrush(RGB_PANEL);
-                return (LRESULT)g_panelBrush;
-            }
-            if (ctl == g_accountRemoveBtn) {
-                SetTextColor(hdc, RGB(225, 82, 82));
-                if (!g_panelBrush) g_panelBrush = CreateSolidBrush(RGB_PANEL);
-                return (LRESULT)g_panelBrush;
-            }
-            break;
-        }
         case WM_CTLCOLOREDIT: {
             HDC hdc = (HDC)wp;
             SetTextColor(hdc, RGB(225, 227, 232));
@@ -2869,7 +2842,6 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
                              WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                              CW_USEDEFAULT, CW_USEDEFAULT, 1200, 800, 0, 0, hi, 0);
     if (!g_hwnd) return 0;
-    enable_dark_mode(g_hwnd);
     SetWindowTextW(g_hwnd, APP_TITLE);
     SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_appIcon);
     SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_appIconSm);
