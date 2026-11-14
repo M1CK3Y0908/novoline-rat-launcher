@@ -496,7 +496,7 @@ static void init_tab_control_support(void) {
 }
 
 static void overdraw_tabs(HWND hwnd, HDC dc) {
-    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Account" };
     int count = (int)SendMessageW(hwnd, TCM_GETITEMCOUNT_LOCAL, 0, 0);
     int selected = g_settingsTab;
     RECT client;
@@ -623,7 +623,7 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
 }
 
 static void add_settings_tabs(void) {
-    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Account" };
     int i;
     if (!g_tab) return;
     for (i = 0; i < 3; i++) {
@@ -638,7 +638,7 @@ static void add_settings_tabs(void) {
 }
 
 static void draw_tab_item(const DRAWITEMSTRUCT *d) {
-    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Account" };
     RECT r;
     COLORREF fill;
     COLORREF border;
@@ -769,7 +769,7 @@ static void create_controls(HWND hwnd) {
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS, inst, 0);
-    g_logoutBtn = CreateWindowExW(0, L"BUTTON", L"Log out",
+    g_logoutBtn = CreateWindowExW(0, L"BUTTON", L"Account",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LOGOUT, inst, 0);
     g_launchBtn = CreateWindowExW(0, L"BUTTON", L"Launch",
@@ -820,7 +820,7 @@ static void create_controls(HWND hwnd) {
     g_memRange = CreateWindowExW(0, L"STATIC", L"(1024 - 32768)",
                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_RANGE, inst, 0);
-    g_profileLabel = CreateWindowExW(0, L"STATIC", L"PROFILE",
+    g_profileLabel = CreateWindowExW(0, L"STATIC", L"ACCOUNT",
                                      WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_LABEL, inst, 0);
     g_profileValue = CreateWindowExW(0, L"STATIC", L"",
@@ -1340,9 +1340,11 @@ static void draw_texts(HDC dc, const Layout *l) {
             draw_description(dc, l, entry->description);
         }
     } else {
-        draw_text(dc, L"Settings", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
+        draw_text(dc, g_settingsTab == 2 ? L"Account" : L"Settings",
+                  l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
+        draw_text(dc, g_settingsTab == 2 ? L"Manage your Minecraft accounts" : L"Launcher configuration",
+                  l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
     }
 
@@ -1716,8 +1718,11 @@ static void handle_command(int id) {
             PostMessageW(g_hwnd, WM_APP_TAB_RESET, 0, 0);
             break;
         case IDC_LOGOUT:
-            scopy(g_settings.username, L"novoline_rat", 64);
-            settings_save(&g_settings);
+            if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 2, 0);
+            g_settingsTab = 2;
+            g_page = 1;
+            refresh_settings_statics();
+            sync_page_controls();
             InvalidateRect(g_hwnd, 0, FALSE);
             break;
         case IDC_LAUNCH:
