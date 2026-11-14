@@ -156,6 +156,54 @@ static float g_scale = 1.0f;
 static int g_clientW = 0, g_clientH = 0;
 static int g_page = 0;
 static int g_selected = 0;
+
+static int is_windows_11(void) {
+    static int cached = -1;
+    typedef LONG (WINAPI *PFN_RtlGetVersion)(void *);
+    struct { ULONG size; ULONG major; ULONG minor; ULONG build; WCHAR platform[128]; WCHAR csd[128]; } ver;
+    HMODULE ntdll;
+    PFN_RtlGetVersion fn;
+    if (cached >= 0) return cached;
+    cached = 0;
+    {
+        char force[4];
+        if (GetEnvironmentVariableA("NOVOLINE_FORCE_ROUND", force, sizeof(force)) > 0) cached = 1;
+    }
+    ntdll = LoadLibraryW(L"ntdll.dll");
+    if (!ntdll) return cached;
+    fn = (PFN_RtlGetVersion)GetProcAddress(ntdll, "RtlGetVersion");
+    ZeroMemory(&ver, sizeof(ver));
+    ver.size = sizeof(ver);
+    if (fn && fn(&ver) == 0 && ver.major >= 10 && ver.build >= 22000) cached = 1;
+    FreeLibrary(ntdll);
+    return cached;
+}
+
+static int system_panel_radius(void) {
+    return is_windows_11() ? 10 : 0;
+}
+
+static int system_button_radius(void) {
+    return is_windows_11() ? 6 : 0;
+}
+
+static int system_tab_radius(void) {
+    return is_windows_11() ? 6 : 0;
+}
+
+static void apply_control_region(HWND hwnd, int radius) {
+    RECT rc;
+    HRGN region;
+    if (!hwnd) return;
+    if (radius <= 0) {
+        SetWindowRgn(hwnd, 0, TRUE);
+        return;
+    }
+    GetClientRect(hwnd, &rc);
+    region = CreateRoundRectRgn(0, 0, rc.right + 1, rc.bottom + 1,
+                                radius * 2, radius * 2);
+    if (region) SetWindowRgn(hwnd, region, TRUE);
+}
 static int g_launching = 0;
 #define LAUNCH_IDLE     0
 #define LAUNCH_STARTING 1
@@ -565,19 +613,45 @@ static void overdraw_tabs(HWND hwnd, HDC dc) {
         HGDIOBJ oldFont;
         if (!SendMessageW(hwnd, TCM_GETITEMRECT_LOCAL, (WPARAM)i, (LPARAM)&r)) continue;
         r.bottom = client.bottom;
-        brush = CreateSolidBrush(fill);
-        FillRect(dc, &r, brush);
-        DeleteObject(brush);
-        pen = CreatePen(PS_SOLID, 1, border);
-        oldPen = SelectObject(dc, pen);
-        MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.right - 1, r.top);
-        MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.left, r.bottom - 1);
-        MoveToEx(dc, r.right - 1, r.top, 0); LineTo(dc, r.right - 1, r.bottom - 1);
-        if (i != selected) {
-            MoveToEx(dc, r.left, r.bottom - 1, 0); LineTo(dc, r.right - 1, r.bottom - 1);
+        {
+            int radius = (int)(system_tab_radius() * g_scale + 0.5f);
+            if (radius > 0) {
+                HGDIOBJ oldBrush;
+                brush = CreateSolidBrush(fill);
+                pen = CreatePen(PS_SOLID, 1, border);
+                oldPen = SelectObject(dc, pen);
+                oldBrush = SelectObject(dc, brush);
+                RoundRect(dc, r.left, r.top, r.right, r.bottom + radius,
+                          radius * 2, radius * 2);
+                SelectObject(dc, oldBrush);
+                SelectObject(dc, oldPen);
+                DeleteObject(pen);
+                DeleteObject(brush);
+                if (i != selected) {
+                    pen = CreatePen(PS_SOLID, 1, border);
+                    oldPen = SelectObject(dc, pen);
+                    MoveToEx(dc, r.left, r.bottom - 1, 0);
+                    LineTo(dc, r.right - 1, r.bottom - 1);
+                    SelectObject(dc, oldPen);
+                    DeleteObject(pen);
+                }
+            } else {
+                brush = CreateSolidBrush(fill);
+                FillRect(dc, &r, brush);
+                DeleteObject(brush);
+                pen = CreatePen(PS_SOLID, 1, border);
+                oldPen = SelectObject(dc, pen);
+                MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.right - 1, r.top);
+                MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.left, r.bottom - 1);
+                MoveToEx(dc, r.right - 1, r.top, 0); LineTo(dc, r.right - 1, r.bottom - 1);
+                if (i != selected) {
+                    MoveToEx(dc, r.left, r.bottom - 1, 0);
+                    LineTo(dc, r.right - 1, r.bottom - 1);
+                }
+                SelectObject(dc, oldPen);
+                DeleteObject(pen);
+            }
         }
-        SelectObject(dc, oldPen);
-        DeleteObject(pen);
         if (i == selected) {
             bottom.left = r.left;
             bottom.top = r.bottom - 1;
@@ -999,12 +1073,25 @@ static void paint_native_button(HWND hwnd, HDC target) {
         return;
     }
     oldbmp = SelectObject(mem, bmp);
-    brush = CreateSolidBrush(fill);
-    FillRect(mem, &rc, brush);
-    DeleteObject(brush);
-    brush = CreateSolidBrush(border);
-    FrameRect(mem, &rc, brush);
-    DeleteObject(brush);
+    {
+        int radius = (int)(system_button_radius() * g_scale + 0.5f);
+        COLORREF parent = (id == IDC_SETTINGS || id == IDC_LOGOUT || id == IDC_LAUNCH)
+                              ? RGB_BG : RGB_PANEL;
+        HGDIOBJ oldPen, oldBrush;
+        HPEN pen;
+        brush = CreateSolidBrush(parent);
+        FillRect(mem, &rc, brush);
+        DeleteObject(brush);
+        brush = CreateSolidBrush(fill);
+        pen = CreatePen(PS_SOLID, 1, border);
+        oldPen = SelectObject(mem, pen);
+        oldBrush = SelectObject(mem, brush);
+        RoundRect(mem, 0, 0, rc.right, rc.bottom, radius * 2, radius * 2);
+        SelectObject(mem, oldBrush);
+        SelectObject(mem, oldPen);
+        DeleteObject(pen);
+        DeleteObject(brush);
+    }
     label[0] = 0;
     GetWindowTextW(hwnd, label, 128);
     if (id == IDC_ACCOUNT_USE) {
@@ -1262,6 +1349,14 @@ static void layout_controls(void) {
                  (int)(accountBottomButton * g_scale + 0.5f),
                  (int)(((accountRightW - 8.0f) / 2.0f) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    {
+        int editRadius = (int)(system_button_radius() * g_scale + 0.5f);
+        int listRadius = (int)(system_panel_radius() * g_scale + 0.5f);
+        apply_control_region(g_memEdit, editRadius);
+        apply_control_region(g_offlineEdit, editRadius);
+        apply_control_region(g_msCodeEdit, editRadius);
+        apply_control_region(g_accountList, listRadius);
+    }
 }
 
 static void invalidate_settings_card(HWND hwnd) {
@@ -1383,22 +1478,7 @@ static void draw_release_shapes(GpGraphics *g, const Layout *l) {
     (void)l;
 }
 
-static int system_panel_radius(void) {
-    typedef LONG (WINAPI *PFN_RtlGetVersion)(void *);
-    struct { ULONG size; ULONG major; ULONG minor; ULONG build; WCHAR platform[128]; WCHAR csd[128]; } ver;
-    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
-    PFN_RtlGetVersion fn;
-    if (!ntdll) return 0;
-    fn = (PFN_RtlGetVersion)GetProcAddress(ntdll, "RtlGetVersion");
-    ZeroMemory(&ver, sizeof(ver));
-    ver.size = sizeof(ver);
-    if (fn && fn(&ver) == 0 && ver.major >= 10 && ver.build >= 22000) {
-        FreeLibrary(ntdll);
-        return 10;
-    }
-    FreeLibrary(ntdll);
-    return 0;
-}
+
 
 static void draw_settings_shapes(GpGraphics *g, const Layout *l) {
     panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, 96.0f, l->card.w,
