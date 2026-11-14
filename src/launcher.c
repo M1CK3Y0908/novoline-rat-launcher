@@ -185,6 +185,24 @@ static void sanitize_username(WCHAR *name, int cap) {
 const WCHAR *default_game_dir(void) { return DEFAULT_GAME_DIR; }
 const WCHAR *default_java_dir(void) { return DEFAULT_JAVA_DIR; }
 
+static void account_from_legacy(AccountEntry *a, const LauncherSettings *s) {
+    a->type = s->accountType;
+    scopy(a->name, s->username, 64);
+    scopy(a->uuid, s->uuid, 64);
+    scopy(a->accessToken, s->accessToken, 4096);
+    scopy(a->refreshToken, s->refreshToken, 4096);
+    a->expires = s->tokenExpires;
+}
+
+static void legacy_from_account(LauncherSettings *s, const AccountEntry *a) {
+    s->accountType = a->type;
+    scopy(s->username, a->name, 64);
+    scopy(s->uuid, a->uuid, 64);
+    scopy(s->accessToken, a->accessToken, 4096);
+    scopy(s->refreshToken, a->refreshToken, 4096);
+    s->tokenExpires = a->expires;
+}
+
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
     ZeroMemory(s, sizeof(*s));
@@ -200,6 +218,10 @@ void settings_defaults(LauncherSettings *s) {
     }
     scopy(s->username, L"novoline_rat", 64);
     s->memoryMB = 4096;
+    s->accountCount = 1;
+    s->activeAccount = 0;
+    s->accounts[0].type = 0;
+    scopy(s->accounts[0].name, s->username, 64);
 }
 
 static char *read_utf8_file(const WCHAR *path, int *outLen) {
@@ -255,6 +277,7 @@ void settings_load(LauncherSettings *s) {
     WCHAR *wide;
     char *buf;
     int len = 0;
+    int hasAccountData = 0;
     settings_defaults(s);
     buf = read_utf8_file(settings_config_path(), &len);
     if (!buf) return;
@@ -291,6 +314,29 @@ void settings_load(LauncherSettings *s) {
                 else if (!wcscmp(k, L"refreshToken") && v[0]) scopy(s->refreshToken, v, 4096);
                 else if (!wcscmp(k, L"accountType")) s->accountType = _wtoi(v);
                 else if (!wcscmp(k, L"tokenExpires")) s->tokenExpires = _wtoi(v);
+                else if (!wcscmp(k, L"accountCount")) s->accountCount = _wtoi(v);
+                else if (!wcscmp(k, L"activeAccount")) s->activeAccount = _wtoi(v);
+                else if (!wcsncmp(k, L"account", 7) && k[7] >= L'0' && k[7] <= L'9') {
+                    int index = 0;
+                    WCHAR *q = k + 7;
+                    WCHAR *dot;
+                    while (*q >= L'0' && *q <= L'9') {
+                        index = index * 10 + (*q - L'0');
+                        q++;
+                    }
+                    dot = wcschr(q, L'.');
+                    if (dot && index >= 0 && index < MAX_ACCOUNTS) {
+                        AccountEntry *a = &s->accounts[index];
+                        hasAccountData = 1;
+                        dot++;
+                        if (!wcscmp(dot, L"type")) a->type = _wtoi(v);
+                        else if (!wcscmp(dot, L"name") && v[0]) scopy(a->name, v, 64);
+                        else if (!wcscmp(dot, L"uuid") && v[0]) scopy(a->uuid, v, 64);
+                        else if (!wcscmp(dot, L"accessToken") && v[0]) scopy(a->accessToken, v, 4096);
+                        else if (!wcscmp(dot, L"refreshToken") && v[0]) scopy(a->refreshToken, v, 4096);
+                        else if (!wcscmp(dot, L"expires")) a->expires = _wtoi(v);
+                    }
+                }
                 else if (!wcscmp(k, L"memoryMB")) {
                     int m = _wtoi(v);
                     if (m >= 512 && m <= 32768) s->memoryMB = m;
@@ -312,6 +358,22 @@ void settings_load(LauncherSettings *s) {
     if (s->memoryMB < 512) s->memoryMB = 4096;
     if (!s->username[0]) scopy(s->username, L"novoline_rat", 64);
     if (s->accountType != 1) s->accountType = 0;
+    if (!hasAccountData) {
+        s->accountCount = 1;
+        s->activeAccount = 0;
+        account_from_legacy(&s->accounts[0], s);
+    }
+    if (s->accountCount < 1) s->accountCount = 1;
+    if (s->accountCount > MAX_ACCOUNTS) s->accountCount = MAX_ACCOUNTS;
+    if (s->activeAccount < 0 || s->activeAccount >= s->accountCount) s->activeAccount = 0;
+    {
+        int i;
+        for (i = 0; i < s->accountCount; i++) {
+            if (s->accounts[i].type != 1) s->accounts[i].type = 0;
+            if (!s->accounts[i].name[0]) scopy(s->accounts[i].name, L"Player", 64);
+        }
+    }
+    legacy_from_account(s, &s->accounts[s->activeAccount]);
 }
 
 void settings_save(const LauncherSettings *s) {
@@ -322,6 +384,10 @@ void settings_save(const LauncherSettings *s) {
     DWORD written = 0;
     HANDLE h;
     if (!s) return;
+    if (s->accountCount > 0 && s->activeAccount >= 0 && s->activeAccount < s->accountCount) {
+        LauncherSettings *mutable = (LauncherSettings *)s;
+        account_from_legacy(&mutable->accounts[mutable->activeAccount], mutable);
+    }
     settings_app_dir();
     path_join(path, PATH_CAP, settings_app_dir(), L"settings.ini");
     game = wide_to_utf8_alloc(s->gameDir);
@@ -334,7 +400,7 @@ void settings_save(const LauncherSettings *s) {
         free(game); free(java); free(user); free(uuid); free(access); free(refresh); return;
     }
     cap = (int)(strlen(game) + strlen(java) + strlen(user) + strlen(uuid) +
-                strlen(access) + strlen(refresh) + 256);
+                strlen(access) + strlen(refresh) + 256 + MAX_ACCOUNTS * 9000);
     text = (char *)calloc((size_t)cap, 1);
     if (!text) {
         free(game); free(java); free(user); free(uuid); free(access); free(refresh); return;
@@ -348,6 +414,29 @@ void settings_save(const LauncherSettings *s) {
     len += sprintf(text + len, "refreshToken=%s\r\n", refresh);
     len += sprintf(text + len, "accountType=%d\r\n", s->accountType);
     len += sprintf(text + len, "tokenExpires=%ld\r\n", (long)s->tokenExpires);
+    len += sprintf(text + len, "accountCount=%d\r\n", s->accountCount);
+    len += sprintf(text + len, "activeAccount=%d\r\n", s->activeAccount);
+    {
+        int i;
+        for (i = 0; i < s->accountCount && i < MAX_ACCOUNTS; i++) {
+            const AccountEntry *a = &s->accounts[i];
+            char *aname = wide_to_utf8_alloc(a->name);
+            char *auuid = wide_to_utf8_alloc(a->uuid);
+            char *aaccess = wide_to_utf8_alloc(a->accessToken);
+            char *arefresh = wide_to_utf8_alloc(a->refreshToken);
+            if (!aname || !auuid || !aaccess || !arefresh) {
+                free(aname); free(auuid); free(aaccess); free(arefresh);
+                continue;
+            }
+            len += sprintf(text + len, "account%d.type=%d\r\n", i, a->type);
+            len += sprintf(text + len, "account%d.name=%s\r\n", i, aname);
+            len += sprintf(text + len, "account%d.uuid=%s\r\n", i, auuid);
+            len += sprintf(text + len, "account%d.accessToken=%s\r\n", i, aaccess);
+            len += sprintf(text + len, "account%d.refreshToken=%s\r\n", i, arefresh);
+            len += sprintf(text + len, "account%d.expires=%ld\r\n", i, (long)a->expires);
+            free(aname); free(auuid); free(aaccess); free(arefresh);
+        }
+    }
     len += sprintf(text + len, "memoryMB=%d\r\n", s->memoryMB);
     h = CreateFileW(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h != INVALID_HANDLE_VALUE) {
@@ -1780,6 +1869,37 @@ int msa_refresh_session(LauncherSettings *s, WCHAR *error, int errorCap) {
         return 0;
     if (!oauthRefresh[0]) scopy(oauthRefresh, s->refreshToken, 4096);
     return msa_finish_login(oauthAccess, oauthRefresh, s, error, errorCap);
+}
+
+
+int account_avatar_path(const WCHAR *uuid, WCHAR *path, int cap) {
+    WCHAR dir[PATH_CAP];
+    WCHAR name[128];
+    int i, n = 0;
+    if (!uuid || !uuid[0] || !path || cap <= 0) return 0;
+    for (i = 0; uuid[i] && n < 100; i++) {
+        WCHAR c = uuid[i];
+        if ((c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') ||
+            (c >= L'A' && c <= L'F') || c == L'-')
+            name[n++] = c;
+    }
+    name[n] = 0;
+    if (!name[0]) return 0;
+    path_join(dir, PATH_CAP, settings_app_dir(), L"avatars");
+    path_join(path, cap, dir, name);
+    sappend(path, L".png", cap);
+    return 1;
+}
+
+int account_download_avatar(const WCHAR *uuid, WCHAR *path, int cap) {
+    WCHAR url[512], error[256];
+    WCHAR dir[PATH_CAP];
+    if (!account_avatar_path(uuid, path, cap)) return 0;
+    if (file_exists(path)) return 1;
+    path_join(dir, PATH_CAP, settings_app_dir(), L"avatars");
+    ensure_dir_tree(dir);
+    wsprintfW(url, L"https://crafatar.com/avatars/%ls?size=64&overlay", uuid);
+    return download_file(url, path, L"Downloading avatar", 0, error, 256);
 }
 
 

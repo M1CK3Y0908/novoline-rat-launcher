@@ -30,6 +30,10 @@ typedef struct GpMatrix GpMatrix;
 typedef struct GpImage GpImage;
 typedef struct GpBitmap GpBitmap;
 
+GpStatus GdipLoadImageFromFile(const WCHAR *filename, GpImage **image);
+GpStatus GdipDrawImageRectI(GpGraphics *graphics, GpImage *image, INT x, INT y, INT width, INT height);
+GpStatus GdipDisposeImage(GpImage *image);
+
 typedef struct GpPointF {
     float X;
     float Y;

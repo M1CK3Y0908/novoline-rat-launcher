@@ -33,13 +33,13 @@ dist\NovolineLauncher.exe
 - 数据尚未返回时，左侧显示 `Loading...`，右侧显示加载提示；不会显示任何本地内置版本列表。
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
-- `Settings`：使用原生 `SysTabControl32` 分为 `Paths` / `Game` / `Account` 三页；标签按文字宽度自动排列并左对齐，鼠标悬停时显示高亮，内容区域位于标签下方。内容由原生 `STATIC` / `EDIT` / `BUTTON` 控件组成。
-- `Account` 支持离线账户和微软账户：离线名可直接修改；微软账户通过浏览器授权后粘贴重定向 URL 或授权码完成登录，登录令牌会保存到 `settings.ini` 以便后续刷新。
+- `Settings`：使用原生 `SysTabControl32` 分为 `Paths` / `Game` 两页；标签按文字宽度自动排列并左对齐，鼠标悬停时显示高亮，内容区域位于标签下方。内容由原生 `STATIC` / `EDIT` / `BUTTON` 控件组成。
+- 左侧 `Account` 打开独立账户页：以列表显示头像、IGN、账户类型和当前活动账户，最多保存 8 个离线/微软账户，支持添加、切换和移除。微软头像从 Crafatar 下载并缓存，离线账户使用本地头像占位。
 - 设置内容卡片在 Windows 11 使用系统圆角，在 Windows 10 保持直角。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
 - 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待状态只显示文字，不显示加载图标；关闭为红色 #FF3B30 电源符号，按 80% 大小绘制并向上偏移。
 - 启动按钮上方有 5px 状态色条：平时隐藏；点击启动后显示主题色流光并显示 `Waiting for the game`，检测到游戏窗口后变为绿色呼吸效果和 `Running`，失败为红色流光。
-- 左侧 `Account`：打开账户页，可添加离线账户或登录微软账户。
+- 左侧 `Account`：打开账户列表页，可添加离线账户、登录微软账户、切换活动账户或移除账户。
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`
   - 默认 Java 目录：`C:\M1CK3Y\novoline.rat\java`
