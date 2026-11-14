@@ -76,8 +76,8 @@
 #define CDIS_SELECTED_LOCAL 0x0001
 #define TCN_SELCHANGE_LOCAL (-551)
 #define ODT_TAB_LOCAL 101
-#define DESIGN_W 584.0f
-#define DESIGN_H 361.0f
+#define DESIGN_W 660.0f
+#define DESIGN_H 440.0f
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
 #define WM_APP_VERSIONS_DONE (WM_APP + 18)
 #define WM_APP_LAUNCH_STATUS (WM_APP + 19)
@@ -944,6 +944,12 @@ static void apply_control_fonts(void) {
 static void layout_controls(void) {
     Layout l = make_layout();
     int x, y, w, h;
+    float accountBottom = l.H - 64.0f;
+    float accountListW = (l.card.w - 24.0f) * 0.56f;
+    float accountListH = accountBottom - 8.0f - 64.0f;
+    float accountRightX = l.card.x + 8.0f + accountListW + 8.0f;
+    float accountRightW = l.card.x + l.card.w - 8.0f - accountRightX;
+    float accountBottomButton = accountBottom - 32.0f;
     if (!g_list) return;
     x = (int)(l.items[0].x * g_scale + 0.5f);
     y = (int)(l.items[0].y * g_scale + 0.5f);
@@ -1029,49 +1035,52 @@ static void layout_controls(void) {
                  (int)((l.card.w - 16) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_offlineLabel, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(64 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(64 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_offlineEdit, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(82 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(82 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_offlineBtn, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(110 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(110 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msLabel, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msLoginBtn, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(160 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(160 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msLogoutBtn, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msCodeEdit, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(188 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(22 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(188 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(22 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msCompleteBtn, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(214 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f), (int)(214 * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_msStatus, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(240 * g_scale + 0.5f),
-                 (int)(156 * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f),
+                 (int)((accountBottomButton - 24) * g_scale + 0.5f),
+                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_accountList, 0,
                  (int)((l.card.x + 8) * g_scale + 0.5f), (int)(64 * g_scale + 0.5f),
-                 (int)(200 * g_scale + 0.5f), (int)(236 * g_scale + 0.5f),
+                 (int)(accountListW * g_scale + 0.5f), (int)(accountListH * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_accountUseBtn, 0,
-                 (int)((l.card.x + 216) * g_scale + 0.5f), (int)(264 * g_scale + 0.5f),
-                 (int)(74 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)(accountRightX * g_scale + 0.5f),
+                 (int)(accountBottomButton * g_scale + 0.5f),
+                 (int)(((accountRightW - 8.0f) / 2.0f) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_accountRemoveBtn, 0,
-                 (int)((l.card.x + 298) * g_scale + 0.5f), (int)(264 * g_scale + 0.5f),
-                 (int)(74 * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
+                 (int)((accountRightX + (accountRightW + 8.0f) / 2.0f) * g_scale + 0.5f),
+                 (int)(accountBottomButton * g_scale + 0.5f),
+                 (int)(((accountRightW - 8.0f) / 2.0f) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -1276,9 +1285,12 @@ static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     }
 }
 static void draw_account_shapes(GpGraphics *g, const Layout *l) {
-    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, 58.0f, l->card.w, 252.0f,
+    float bottom = l->H - 64.0f;
+    float listW = (l->card.w - 24.0f) * 0.56f;
+    float listH = bottom - 8.0f - 64.0f;
+    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, 58.0f, l->card.w, bottom - 58.0f,
           system_panel_radius(), 1);
-    panel(g, RGB(31, 34, 40), RGB_BORDER, l->card.x + 8, 64.0f, 200.0f, 236.0f, 2.0f, 1);
+    panel(g, RGB(31, 34, 40), RGB_BORDER, l->card.x + 8, 64.0f, listW, listH, 2.0f, 1);
 }
 
 static void draw_shapes(GpGraphics *g, const Layout *l) {
@@ -1442,6 +1454,9 @@ static void draw_account_item(const DRAWITEMSTRUCT *d) {
     RECT r = d->rcItem;
     HBRUSH brush;
     HGDIOBJ oldFont;
+    int pad = (int)(8 * g_scale + 0.5f);
+    int avatar = (int)(40 * g_scale + 0.5f);
+    int textX;
     if (index < 0 || index >= g_settings.accountCount) return;
     a = &g_settings.accounts[index];
     brush = CreateSolidBrush(d->itemState & ODS_SELECTED ? RGB(42, 46, 55) : RGB(31, 34, 40));
@@ -1455,23 +1470,25 @@ static void draw_account_item(const DRAWITEMSTRUCT *d) {
         SelectObject(d->hDC, oldPen);
         DeleteObject(pen);
     }
-    draw_account_avatar(d->hDC, r.left + 8, r.top + 7, 40, a);
+    textX = r.left + pad + avatar + (int)(8 * g_scale + 0.5f);
+    draw_account_avatar(d->hDC, r.left + pad, r.top + (int)(7 * g_scale + 0.5f), avatar, a);
     SetBkMode(d->hDC, TRANSPARENT);
     SetTextColor(d->hDC, RGB(228, 230, 235));
     oldFont = SelectObject(d->hDC, g_font20);
     {
-        RECT nameRect = { r.left + 56, r.top + 6, r.right - 8, r.top + 28 };
+        RECT nameRect = { textX, r.top + (int)(5 * g_scale), r.right - pad, r.top + (int)(28 * g_scale) };
         DrawTextW(d->hDC, a->name, -1, &nameRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     SetTextColor(d->hDC, RGB(150, 154, 162));
     SelectObject(d->hDC, g_font16);
     {
-        RECT typeRect = { r.left + 56, r.top + 28, r.right - 8, r.top + 46 };
+        RECT typeRect = { textX, r.top + (int)(27 * g_scale), r.right - pad, r.top + (int)(46 * g_scale) };
         const WCHAR *type = a->type == 1 ? L"Microsoft account" : L"Offline account";
         DrawTextW(d->hDC, type, -1, &typeRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
     if (index == g_settings.activeAccount) {
-        RECT activeRect = { r.right - 50, r.top + 6, r.right - 8, r.top + 24 };
+        RECT activeRect = { r.right - (int)(56 * g_scale), r.top + (int)(5 * g_scale),
+                            r.right - pad, r.top + (int)(23 * g_scale) };
         SetTextColor(d->hDC, RGB(156, 120, 220));
         DrawTextW(d->hDC, L"Active", -1, &activeRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
@@ -2247,8 +2264,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             RECT r;
             r.left = 0;
             r.top = 0;
-            r.right = (LONG)(520 * g_scale);
-            r.bottom = (LONG)(360 * g_scale);
+            r.right = (LONG)(660 * g_scale);
+            r.bottom = (LONG)(440 * g_scale);
             AdjustWindowRectEx(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
             mmi->ptMinTrackSize.x = r.right - r.left;
             mmi->ptMinTrackSize.y = r.bottom - r.top;
