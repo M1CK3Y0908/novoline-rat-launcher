@@ -137,7 +137,10 @@ static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_p
 static HWND g_offlineLabel, g_offlineEdit, g_offlineBtn;
 static HWND g_msLabel, g_msLoginBtn, g_msCodeEdit, g_msCompleteBtn, g_msLogoutBtn, g_msStatus;
 static HWND g_accountList, g_accountUseBtn, g_accountRemoveBtn;
-static WNDPROC g_useBtnOldProc, g_removeBtnOldProc;
+#define MAX_NATIVE_BUTTONS 16
+static HWND g_nativeButtons[MAX_NATIVE_BUTTONS];
+static WNDPROC g_nativeButtonProcs[MAX_NATIVE_BUTTONS];
+static int g_nativeButtonCount;
 static int g_msLoginRunning = 0;
 static WCHAR g_msLoginError[512];
 static WCHAR g_msCode[4096];
@@ -438,9 +441,44 @@ static void set_control_theme(HWND hwnd) {
     HMODULE ux = LoadLibraryW(L"uxtheme.dll");
     if (ux) {
         typedef HRESULT (WINAPI *PFN_SetWindowTheme)(HWND, LPCWSTR, LPCWSTR);
+        typedef BOOL (WINAPI *PFN_AllowDarkModeForWindow)(HWND, BOOL);
         PFN_SetWindowTheme fn = (PFN_SetWindowTheme)GetProcAddress(ux, "SetWindowTheme");
+        PFN_AllowDarkModeForWindow allow =
+            (PFN_AllowDarkModeForWindow)GetProcAddress(ux, (LPCSTR)133);
+        if (allow) allow(hwnd, TRUE);
         if (fn) fn(hwnd, L"DarkMode_Explorer", 0);
         FreeLibrary(ux);
+    }
+}
+
+static void enable_dark_mode(HWND hwnd) {
+    HMODULE ux = LoadLibraryW(L"uxtheme.dll");
+    if (ux) {
+        typedef int (WINAPI *PFN_SetPreferredAppMode)(int);
+        typedef BOOL (WINAPI *PFN_AllowDarkModeForWindow)(HWND, BOOL);
+        typedef void (WINAPI *PFN_FlushMenuThemes)(void);
+        PFN_SetPreferredAppMode preferred =
+            (PFN_SetPreferredAppMode)GetProcAddress(ux, (LPCSTR)135);
+        PFN_AllowDarkModeForWindow allow =
+            (PFN_AllowDarkModeForWindow)GetProcAddress(ux, (LPCSTR)133);
+        PFN_FlushMenuThemes flush = (PFN_FlushMenuThemes)GetProcAddress(ux, (LPCSTR)136);
+        if (preferred) preferred(2);
+        if (allow) allow(hwnd, TRUE);
+        if (flush) flush();
+        FreeLibrary(ux);
+    }
+    {
+        HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+        if (dwm) {
+            typedef HRESULT (WINAPI *PFN_DwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD);
+            PFN_DwmSetWindowAttribute setAttr =
+                (PFN_DwmSetWindowAttribute)GetProcAddress(dwm, "DwmSetWindowAttribute");
+            if (setAttr) {
+                BOOL dark = TRUE;
+                setAttr(hwnd, 20, &dark, sizeof(dark));
+            }
+            FreeLibrary(dwm);
+        }
     }
 }
 
@@ -768,7 +806,8 @@ static void populate_version_list(void) {
     InvalidateRect(g_list, 0, FALSE);
 }
 
-static LRESULT CALLBACK account_action_btn_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+static LRESULT CALLBACK native_button_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+static void install_native_button(HWND hwnd);
 
 static void create_controls(HWND hwnd) {
     HINSTANCE inst = (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE);
@@ -871,20 +910,23 @@ static void create_controls(HWND hwnd) {
                                     WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY |
                                         LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_LIST, inst, 0);
-    g_accountUseBtn = CreateWindowExW(0, L"BUTTON", L"",
+    g_accountUseBtn = CreateWindowExW(0, L"BUTTON", L"Login",
                                       WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                       0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_USE, inst, 0);
-    g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"",
+    g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"Remove",
                                          WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                          0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_REMOVE, inst, 0);
-    if (g_accountUseBtn) set_window_theme_none(g_accountUseBtn);
-    if (g_accountRemoveBtn) set_window_theme_none(g_accountRemoveBtn);
-    if (g_accountUseBtn)
-        g_useBtnOldProc = (WNDPROC)SetWindowLongPtrW(g_accountUseBtn, GWLP_WNDPROC,
-                                                     (LONG_PTR)account_action_btn_proc);
-    if (g_accountRemoveBtn)
-        g_removeBtnOldProc = (WNDPROC)SetWindowLongPtrW(g_accountRemoveBtn, GWLP_WNDPROC,
-                                                        (LONG_PTR)account_action_btn_proc);
+    {
+        HWND buttons[] = {
+            g_settingsBtn, g_logoutBtn, g_launchBtn, g_openBtn, g_detectBtn,
+            g_resetGameBtn, g_resetJavaBtn, g_offlineBtn, g_msLoginBtn,
+            g_msLogoutBtn, g_msCompleteBtn, g_accountUseBtn, g_accountRemoveBtn
+        };
+        int i;
+        for (i = 0; i < (int)(sizeof(buttons) / sizeof(buttons[0])); i++) {
+            install_native_button(buttons[i]);
+        }
+    }
     if (g_offlineEdit) {
         set_window_theme_none(g_offlineEdit);
         SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
@@ -911,38 +953,129 @@ static void create_controls(HWND hwnd) {
     SetTimer(hwnd, 2, 40, 0);
 }
 
-static void draw_action_caption(HWND hwnd, HDC dc) {
-    RECT r;
-    const WCHAR *label = (hwnd == g_accountUseBtn) ? L"Login" : L"Remove";
-    COLORREF color = IsWindowEnabled(hwnd) ? ((hwnd == g_accountUseBtn) ? RGB(92, 200, 130)
-                                                                          : RGB(225, 82, 82))
-                                           : RGB(120, 124, 132);
-    HFONT font = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
-    int saved = SaveDC(dc);
-    GetClientRect(hwnd, &r);
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, color);
-    SelectObject(dc, font ? font : g_font20);
-    DrawTextW(dc, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    RestoreDC(dc, saved);
+static WNDPROC native_button_old_proc(HWND hwnd) {
+    int i;
+    for (i = 0; i < g_nativeButtonCount; i++) {
+        if (g_nativeButtons[i] == hwnd) return g_nativeButtonProcs[i];
+    }
+    return 0;
 }
 
-static LRESULT CALLBACK account_action_btn_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    WNDPROC oldProc = (hwnd == g_accountUseBtn) ? g_useBtnOldProc : g_removeBtnOldProc;
-    LRESULT result = oldProc ? CallWindowProcW(oldProc, hwnd, msg, wp, lp)
-                             : DefWindowProcW(hwnd, msg, wp, lp);
+static void paint_native_button(HWND hwnd, HDC target) {
+    RECT rc;
+    HDC mem;
+    HBITMAP bmp, oldbmp;
+    HBRUSH brush;
+    HGDIOBJ oldFont;
+    WCHAR label[128];
+    COLORREF fill = RGB_BUTTON;
+    COLORREF border = RGB_BTN_BORD;
+    COLORREF textColor = RGB(210, 212, 218);
+    int id = GetDlgCtrlID(hwnd);
+    int hovered = GetPropW(hwnd, L"NV_BUTTON_HOVER") != 0;
+    int pressed = GetCapture() == hwnd && (GetKeyState(VK_LBUTTON) & 0x8000) != 0;
+    if (!IsWindowEnabled(hwnd)) {
+        fill = RGB(43, 47, 56);
+        border = RGB(55, 59, 69);
+        textColor = RGB(124, 128, 136);
+    } else if (pressed) {
+        fill = RGB_BUTTON_P;
+        border = RGB(62, 67, 79);
+    } else if (id == IDC_SETTINGS && g_page == 1) {
+        fill = hovered ? RGB(64, 69, 82) : RGB(56, 61, 73);
+        if (hovered) border = RGB_BTN_BORD_H;
+    } else if (hovered) {
+        fill = RGB_BUTTON_H;
+        border = RGB_BTN_BORD_H;
+        textColor = RGB(235, 237, 242);
+    }
+    GetClientRect(hwnd, &rc);
+    if (rc.right <= rc.left || rc.bottom <= rc.top) return;
+    mem = CreateCompatibleDC(target);
+    bmp = CreateCompatibleBitmap(target, rc.right, rc.bottom);
+    if (!mem || !bmp) {
+        if (bmp) DeleteObject(bmp);
+        if (mem) DeleteDC(mem);
+        return;
+    }
+    oldbmp = SelectObject(mem, bmp);
+    brush = CreateSolidBrush(fill);
+    FillRect(mem, &rc, brush);
+    DeleteObject(brush);
+    brush = CreateSolidBrush(border);
+    FrameRect(mem, &rc, brush);
+    DeleteObject(brush);
+    label[0] = 0;
+    GetWindowTextW(hwnd, label, 128);
+    if (id == IDC_ACCOUNT_USE) {
+        scopy(label, L"Login", 128);
+        textColor = IsWindowEnabled(hwnd) ? RGB(92, 200, 130) : RGB(120, 124, 132);
+    } else if (id == IDC_ACCOUNT_REMOVE) {
+        scopy(label, L"Remove", 128);
+        textColor = IsWindowEnabled(hwnd) ? RGB(225, 82, 82) : RGB(120, 124, 132);
+    }
+    if (pressed) OffsetRect(&rc, 0, (int)(1 * g_scale));
+    SetBkMode(mem, TRANSPARENT);
+    SetTextColor(mem, textColor);
+    oldFont = SelectObject(mem, g_font20);
+    DrawTextW(mem, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(mem, oldFont);
+    BitBlt(target, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, oldbmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+}
+
+static LRESULT CALLBACK native_button_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    WNDPROC oldProc = native_button_old_proc(hwnd);
+    if (msg == WM_ERASEBKGND) return 1;
     if (msg == WM_PAINT) {
-        HDC dc = GetDC(hwnd);
-        if (dc) {
-            draw_action_caption(hwnd, dc);
-            ReleaseDC(hwnd, dc);
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        paint_native_button(hwnd, dc);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    if (msg == WM_PRINT || msg == WM_PRINTCLIENT) {
+        paint_native_button(hwnd, (HDC)wp);
+        return 0;
+    }
+    if (msg == WM_MOUSEMOVE) {
+        LRESULT result = oldProc ? CallWindowProcW(oldProc, hwnd, msg, wp, lp) : 0;
+        if (!GetPropW(hwnd, L"NV_BUTTON_HOVER")) {
+            struct { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } tme;
+            SetPropW(hwnd, L"NV_BUTTON_HOVER", (HANDLE)1);
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = 0x00000002;
+            tme.hwndTrack = hwnd;
+            tme.dwHoverTime = 0;
+            TrackMouseEvent((void *)&tme);
+            InvalidateRect(hwnd, 0, FALSE);
         }
-    } else if (msg == WM_PRINT || msg == WM_PRINTCLIENT) {
-        draw_action_caption(hwnd, (HDC)wp);
-    } else if (msg == WM_ENABLE || msg == WM_SETFOCUS || msg == WM_KILLFOCUS) {
+        return result;
+    }
+    if (msg == 0x02A3) {
+        RemovePropW(hwnd, L"NV_BUTTON_HOVER");
         InvalidateRect(hwnd, 0, FALSE);
     }
-    return result;
+    if (msg == WM_ENABLE || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_SETTEXT ||
+        msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) {
+        LRESULT result = oldProc ? CallWindowProcW(oldProc, hwnd, msg, wp, lp) : 0;
+        InvalidateRect(hwnd, 0, FALSE);
+        return result;
+    }
+    if (msg == WM_DESTROY) RemovePropW(hwnd, L"NV_BUTTON_HOVER");
+    return oldProc ? CallWindowProcW(oldProc, hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void install_native_button(HWND hwnd) {
+    WNDPROC oldProc;
+    if (!hwnd || g_nativeButtonCount >= MAX_NATIVE_BUTTONS) return;
+    oldProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)native_button_proc);
+    if (!oldProc) return;
+    g_nativeButtons[g_nativeButtonCount] = hwnd;
+    g_nativeButtonProcs[g_nativeButtonCount] = oldProc;
+    g_nativeButtonCount++;
 }
 
 
@@ -2656,6 +2789,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
                              WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                              CW_USEDEFAULT, CW_USEDEFAULT, 1200, 800, 0, 0, hi, 0);
     if (!g_hwnd) return 0;
+    enable_dark_mode(g_hwnd);
     SetWindowTextW(g_hwnd, APP_TITLE);
     SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_appIcon);
     SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_appIconSm);
