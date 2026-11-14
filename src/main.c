@@ -1103,28 +1103,6 @@ static void draw_play_icon(HDC dc, int cx, int cy, int size) {
     GdipDeleteGraphics(graphics);
 }
 
-static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
-    GpGraphics *graphics = 0;
-    GpPen *pen = 0;
-    GpPath *path = 0;
-    float s = size / 24.0f;
-    float radius = 9.0f * s;
-    int phase = (int)((GetTickCount() / 40) % 360);
-    if (GdipCreateFromHDC(dc, &graphics) != 0) return;
-    GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
-        GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
-        if (GdipCreatePath(GpFillModeWinding, &path) == 0) {
-            GdipAddPathArc(path, (float)cx - radius, (float)cy - radius,
-                           radius * 2.0f, radius * 2.0f, (float)(270 + phase), 270.0f);
-            GdipDrawPath(graphics, pen, path);
-            GdipDeletePath(path);
-        }
-        GdipDeletePen(pen);
-    }
-    GdipDeleteGraphics(graphics);
-}
-
 static void draw_close_icon(HDC dc, int cx, int cy, int size) {
     GpGraphics *graphics = 0;
     GpPen *pen = 0;
@@ -1189,7 +1167,6 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
         int iconKind = 0;
         if (d->CtlID == IDC_LAUNCH && g_page == 0) {
             if (g_launchState == LAUNCH_IDLE || g_launchState == LAUNCH_FAILED) iconKind = 1;
-            else if (g_launchState == LAUNCH_STARTING) iconKind = 2;
             else if (g_launchState == LAUNCH_RUNNING && hovered) iconKind = 3;
         }
         if (iconKind) {
@@ -1213,7 +1190,6 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
             tr.bottom = d->rcItem.bottom;
             DrawTextW(d->hDC, label, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
             if (iconKind == 1) draw_play_icon(d->hDC, left + iconSize / 2, cy, iconSize);
-            else if (iconKind == 2) draw_spinner_icon(d->hDC, left + iconSize / 2, cy, iconSize);
             else draw_close_icon(d->hDC, left + iconSize / 2, cy, iconSize);
         } else {
             DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -1365,8 +1341,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     }
                 }
                 if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
-                if (g_launchState == LAUNCH_STARTING && g_launchBtn)
-                    InvalidateRect(g_launchBtn, 0, FALSE);
             }
             return 0;
         case WM_APP_LAUNCH_STATUS:
