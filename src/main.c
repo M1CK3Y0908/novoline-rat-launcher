@@ -1080,54 +1080,49 @@ static void draw_list_item(const DRAWITEMSTRUCT *d) {
 
 static void draw_play_icon(HDC dc, int cx, int cy, int size) {
     GpGraphics *graphics = 0;
-    GpSolidFill *fill = 0;
     GpPen *pen = 0;
-    GpPointF p[3];
-    float penWidth = size * 0.26f;
-    float height = size - penWidth;
-    float width = height * 0.866f;
+    GpPath *path = 0;
+    float s = size / 24.0f;
+    float x = (float)cx - size / 2.0f;
+    float y = (float)cy - size / 2.0f;
+    float p0x = x + 7.0f * s, p0y = y + 4.8f * s;
+    float p1x = x + 19.0f * s, p1y = y + 12.0f * s;
+    float p2x = x + 7.0f * s, p2y = y + 19.2f * s;
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    p[0].X = (float)cx - width / 2.0f; p[0].Y = (float)cy - height / 2.0f;
-    p[1].X = (float)cx - width / 2.0f; p[1].Y = (float)cy + height / 2.0f;
-    p[2].X = (float)cx + width / 2.0f; p[2].Y = (float)cy;
-    if (GdipCreateSolidFill((ARGB)0xFF00E818, &fill) == 0) {
-        GdipFillPolygon(graphics, (GpBrush *)fill, p, 3, GpFillModeWinding);
-        if (GdipCreatePen1((ARGB)0xFF00E818, penWidth, GpUnitPixel, &pen) == 0) {
-            GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
-            GdipSetPenLineJoin(pen, GpLineJoinRound);
-            GdipDrawLine(graphics, pen, p[0].X, p[0].Y, p[1].X, p[1].Y);
-            GdipDrawLine(graphics, pen, p[1].X, p[1].Y, p[2].X, p[2].Y);
-            GdipDrawLine(graphics, pen, p[2].X, p[2].Y, p[0].X, p[0].Y);
-            GdipDeletePen(pen);
+    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
+        GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
+        GdipSetPenLineJoin(pen, GpLineJoinRound);
+        if (GdipCreatePath(GpFillModeWinding, &path) == 0) {
+            GdipAddPathLine(path, p0x, p0y, p1x, p1y);
+            GdipAddPathLine(path, p1x, p1y, p2x, p2y);
+            GdipAddPathLine(path, p2x, p2y, p0x, p0y);
+            GdipClosePathFigure(path);
+            GdipDrawPath(graphics, pen, path);
+            GdipDeletePath(path);
         }
-        GdipDeleteBrush((GpBrush *)fill);
+        GdipDeletePen(pen);
     }
     GdipDeleteGraphics(graphics);
 }
 
 static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
-    static const int dirX[8] = { 1000, 707, 0, -707, -1000, -707, 0, 707 };
-    static const int dirY[8] = { 0, 707, 1000, 707, 0, -707, -1000, -707 };
-    static const unsigned char alphaLevels[8] = { 255, 220, 185, 150, 115, 80, 50, 25 };
     GpGraphics *graphics = 0;
-    float inner = size * 0.28f;
-    float outer = size * 0.44f;
-    float penWidth = size * 0.12f;
-    int phase = (int)((GetTickCount() / 100) & 7);
-    int i;
+    GpPen *pen = 0;
+    GpPath *path = 0;
+    float s = size / 24.0f;
+    float radius = 9.0f * s;
+    int phase = (int)((GetTickCount() / 40) % 360);
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    for (i = 0; i < 8; i++) {
-        GpPen *pen = 0;
-        ARGB color = ((ARGB)alphaLevels[(i + phase) & 7] << 24) | 0x00FFFFFF;
-        float x1 = (float)cx + (float)dirX[i] * inner / 1000.0f;
-        float y1 = (float)cy + (float)dirY[i] * inner / 1000.0f;
-        float x2 = (float)cx + (float)dirX[i] * outer / 1000.0f;
-        float y2 = (float)cy + (float)dirY[i] * outer / 1000.0f;
-        if (GdipCreatePen1(color, penWidth, GpUnitPixel, &pen) != 0) continue;
+    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
         GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
-        GdipDrawLine(graphics, pen, x1, y1, x2, y2);
+        if (GdipCreatePath(GpFillModeWinding, &path) == 0) {
+            GdipAddPathArc(path, (float)cx - radius, (float)cy - radius,
+                           radius * 2.0f, radius * 2.0f, (float)(270 + phase), 270.0f);
+            GdipDrawPath(graphics, pen, path);
+            GdipDeletePath(path);
+        }
         GdipDeletePen(pen);
     }
     GdipDeleteGraphics(graphics);
@@ -1135,35 +1130,23 @@ static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
 
 static void draw_close_icon(HDC dc, int cx, int cy, int size) {
     GpGraphics *graphics = 0;
-    GpSolidFill *fill = 0;
+    GpPen *pen = 0;
     GpPath *path = 0;
-    float s = size * 0.84f;
-    float half = s / 2.0f;
-    float left = (float)cx - half;
-    float top = (float)cy - half;
-    float right = (float)cx + half;
-    float bottom = (float)cy + half;
-    float r = s * 0.24f;
+    float s = size / 24.0f;
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    if (GdipCreatePath(GpFillModeWinding, &path) != 0) {
-        GdipDeleteGraphics(graphics);
-        return;
+    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
+        GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
+        GdipDrawLine(graphics, pen, (float)cx, (float)cy - 9.0f * s,
+                     (float)cx, (float)cy - 1.0f * s);
+        if (GdipCreatePath(GpFillModeWinding, &path) == 0) {
+            GdipAddPathArc(path, (float)cx - 8.0f * s, (float)cy - 8.0f * s,
+                           16.0f * s, 16.0f * s, 315.0f, 270.0f);
+            GdipDrawPath(graphics, pen, path);
+            GdipDeletePath(path);
+        }
+        GdipDeletePen(pen);
     }
-    GdipAddPathLine(path, left + r, top, right - r, top);
-    GdipAddPathArc(path, right - 2 * r, top, 2 * r, 2 * r, 270, 90);
-    GdipAddPathLine(path, right, top + r, right, bottom - r);
-    GdipAddPathArc(path, right - 2 * r, bottom - 2 * r, 2 * r, 2 * r, 0, 90);
-    GdipAddPathLine(path, right - r, bottom, left + r, bottom);
-    GdipAddPathArc(path, left, bottom - 2 * r, 2 * r, 2 * r, 90, 90);
-    GdipAddPathLine(path, left, bottom - r, left, top + r);
-    GdipAddPathArc(path, left, top, 2 * r, 2 * r, 180, 90);
-    GdipClosePathFigure(path);
-    if (GdipCreateSolidFill((ARGB)0xFFFF0000, &fill) == 0) {
-        GdipFillPath(graphics, (GpBrush *)fill, path);
-        GdipDeleteBrush((GpBrush *)fill);
-    }
-    GdipDeletePath(path);
     GdipDeleteGraphics(graphics);
 }
 
@@ -1214,7 +1197,7 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
         }
         if (iconKind) {
             SIZE textSize;
-            int iconSize = (int)(16 * g_scale + 0.5f);
+            int iconSize = (int)(20 * g_scale + 0.5f);
             int gap = (int)(8 * g_scale + 0.5f);
             int total, left, cy;
             RECT tr;
