@@ -1110,7 +1110,7 @@ static void draw_close_icon(HDC dc, int cx, int cy, int size) {
     float s = size / 24.0f;
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    if (GdipCreatePen1((ARGB)0xFFD8D2F0, 2.0f * s, GpUnitPixel, &pen) == 0) {
+    if (GdipCreatePen1((ARGB)0xFFFF3B30, 2.0f * s, GpUnitPixel, &pen) == 0) {
         GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
         GdipDrawLine(graphics, pen, (float)cx, (float)cy - 9.0f * s,
                      (float)cx, (float)cy - 1.0f * s);
@@ -1174,12 +1174,16 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
             TEXTMETRICW tm;
             int iconSize = (int)(20 * g_scale + 0.5f);
             int gap = (int)(8 * g_scale + 0.5f);
+            int iconOffsetY = 0;
             int total, left, cy;
             RECT tr;
             GetTextExtentPoint32W(d->hDC, label, (int)wcslen(label), &textSize);
             if (iconKind == 1 && GetTextMetricsW(d->hDC, &tm)) {
                 int capHeight = tm.tmAscent - tm.tmInternalLeading;
                 if (capHeight >= 8) iconSize = capHeight;
+            } else if (iconKind == 3) {
+                iconSize = (iconSize * 4) / 5;
+                iconOffsetY = -(int)(2 * g_scale + 0.5f);
             }
             total = iconSize + gap + textSize.cx;
             left = d->rcItem.left + ((d->rcItem.right - d->rcItem.left) - total) / 2;
@@ -1190,7 +1194,7 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
             tr.bottom = d->rcItem.bottom;
             DrawTextW(d->hDC, label, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
             if (iconKind == 1) draw_play_icon(d->hDC, left + iconSize / 2, cy, iconSize);
-            else draw_close_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            else draw_close_icon(d->hDC, left + iconSize / 2, cy + iconOffsetY, iconSize);
         } else {
             DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
