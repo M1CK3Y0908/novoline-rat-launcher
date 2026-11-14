@@ -391,7 +391,7 @@ static Layout make_layout(void) {
     l.resetJavaBtn.y = 148.0f;
     l.resetJavaBtn.w = 54.0f;
     l.resetJavaBtn.h = 24.0f;
-    l.tab.x = l.card.x + 8.0f;
+    l.tab.x = l.card.x;
     l.tab.y = l.card.y + 8.0f;
     l.tab.w = 336.0f;
     l.tab.h = 30.0f;
