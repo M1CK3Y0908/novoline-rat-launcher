@@ -40,6 +40,14 @@
 #define TCM_SETCURSEL_LOCAL 0x130C
 #define TCM_SETITEMSIZE_LOCAL 0x1329
 #define TCM_INSERTITEMW_LOCAL 0x133E
+#define TCM_GETITEMRECT_LOCAL 0x130A
+#define TCM_GETITEMCOUNT_LOCAL 0x1304
+#define NM_CUSTOMDRAW_LOCAL (-12)
+#define CDDS_PREPAINT_LOCAL 0x00000001
+#define CDDS_ITEMPREPAINT_LOCAL 0x00010001
+#define CDRF_NOTIFYITEMDRAW_LOCAL 0x00000020
+#define CDRF_NEWFONT_LOCAL 0x00000002
+#define CDIS_SELECTED_LOCAL 0x0001
 #define TCN_SELCHANGE_LOCAL (-551)
 #define ODT_TAB_LOCAL 101
 #define DESIGN_W 584.0f
@@ -47,6 +55,7 @@
 #define WM_APP_LAUNCH_DONE (WM_APP + 17)
 #define WM_APP_VERSIONS_DONE (WM_APP + 18)
 #define WM_APP_LAUNCH_STATUS (WM_APP + 19)
+#define WM_APP_TAB_RESET (WM_APP + 20)
 
 #define RGB_BG        RGB(33, 36, 41)
 #define RGB_SEP       RGB(43, 46, 53)
@@ -403,6 +412,34 @@ static void set_window_theme_none(HWND hwnd) {
     }
 }
 
+typedef struct NMCustomDrawLocal {
+    NMHDR nmcd;
+    DWORD dwDrawStage;
+    HDC hdc;
+    RECT rc;
+    DWORD_PTR dwItemSpec;
+    UINT uItemState;
+    LPARAM lItemlParam;
+} NMCustomDrawLocal;
+
+typedef struct NMTBCustomDrawLocal {
+    NMCustomDrawLocal nmcd;
+    HBRUSH hbrMonoDither;
+    HBRUSH hbrLines;
+    HPEN hpnLines;
+    int nLinesWidth;
+    COLORREF clrText;
+    COLORREF clrMark;
+    COLORREF clrTextHighlight;
+    COLORREF clrBtnFace;
+    COLORREF clrBtnHighlight;
+    COLORREF clrHighlightHotTrack;
+    RECT rcText;
+    int nStringBkMode;
+    int nHLStringBkMode;
+    int iListGap;
+} NMTBCustomDrawLocal;
+
 typedef struct TabItemWLocal {
     UINT mask;
     DWORD dwState;
@@ -426,6 +463,51 @@ static void init_tab_control_support(void) {
     init(&icc);
 }
 
+static void overdraw_tabs(HWND hwnd, HDC dc) {
+    static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
+    int count = (int)SendMessageW(hwnd, TCM_GETITEMCOUNT_LOCAL, 0, 0);
+    int selected = g_settingsTab;
+    int i;
+    for (i = 0; i < count; i++) {
+        RECT r;
+        RECT bottom;
+        COLORREF fill = (i == selected) ? RGB_PANEL : RGB(24, 27, 32);
+        COLORREF border = (i == selected) ? RGB(72, 77, 90) : RGB_BORDER;
+        COLORREF text = (i == selected) ? RGB(232, 234, 239) : RGB(150, 154, 162);
+        HBRUSH brush;
+        HPEN pen;
+        HGDIOBJ oldPen;
+        HGDIOBJ oldFont;
+        if (!SendMessageW(hwnd, TCM_GETITEMRECT_LOCAL, (WPARAM)i, (LPARAM)&r)) continue;
+        brush = CreateSolidBrush(fill);
+        FillRect(dc, &r, brush);
+        DeleteObject(brush);
+        pen = CreatePen(PS_SOLID, 1, border);
+        oldPen = SelectObject(dc, pen);
+        MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.right - 1, r.top);
+        MoveToEx(dc, r.left, r.top, 0); LineTo(dc, r.left, r.bottom - 1);
+        MoveToEx(dc, r.right - 1, r.top, 0); LineTo(dc, r.right - 1, r.bottom - 1);
+        if (i != selected) {
+            MoveToEx(dc, r.left, r.bottom - 1, 0); LineTo(dc, r.right - 1, r.bottom - 1);
+        }
+        SelectObject(dc, oldPen);
+        DeleteObject(pen);
+        if (i == selected) {
+            bottom.left = r.left;
+            bottom.top = r.bottom - 1;
+            bottom.right = r.right;
+            bottom.bottom = r.bottom;
+            brush = CreateSolidBrush(RGB_PANEL);
+            FillRect(dc, &bottom, brush);
+            DeleteObject(brush);
+        }
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, text);
+        oldFont = SelectObject(dc, g_font20);
+        DrawTextW(dc, labels[i], -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SelectObject(dc, oldFont);
+    }
+}
 static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_ERASEBKGND) {
         HDC dc = (HDC)wp;
@@ -437,6 +519,31 @@ static LRESULT CALLBACK settings_tab_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         DeleteObject(brush);
         return 1;
     }
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT r;
+        HBRUSH brush;
+        GetClientRect(hwnd, &r);
+        brush = CreateSolidBrush(RGB_PANEL);
+        FillRect(dc, &r, brush);
+        DeleteObject(brush);
+        overdraw_tabs(hwnd, dc);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    if (msg == WM_PRINTCLIENT || msg == WM_PRINT) {
+        RECT r;
+        HBRUSH brush;
+        HDC dc = (HDC)wp;
+        GetClientRect(hwnd, &r);
+        brush = CreateSolidBrush(RGB_PANEL);
+        FillRect(dc, &r, brush);
+        DeleteObject(brush);
+        overdraw_tabs(hwnd, dc);
+        return 0;
+    }
+    if (msg == WM_NCPAINT) return 0;
     return CallWindowProcW(g_tabOldProc, hwnd, msg, wp, lp);
 }
 
@@ -459,21 +566,41 @@ static void draw_tab_item(const DRAWITEMSTRUCT *d) {
     static const WCHAR *labels[3] = { L"Paths", L"Game", L"Profile" };
     RECT r;
     COLORREF fill;
+    COLORREF border;
     COLORREF text;
     HBRUSH brush;
+    HPEN pen;
+    HGDIOBJ oldPen;
     HGDIOBJ oldFont;
     int selected;
+    int left, top, right, bottom;
     if (!d || d->itemID >= 3) return;
     selected = (d->itemState & ODS_SELECTED) != 0;
-    fill = selected ? RGB(53, 49, 77) : RGB_PANEL;
+    fill = selected ? RGB_PANEL : RGB(30, 33, 38);
+    border = selected ? RGB(58, 62, 74) : RGB_BORDER;
     text = selected ? RGB(232, 234, 239) : RGB(150, 154, 162);
     r = d->rcItem;
     brush = CreateSolidBrush(fill);
     FillRect(d->hDC, &r, brush);
     DeleteObject(brush);
-    brush = CreateSolidBrush(selected ? RGB(90, 84, 130) : RGB_BORDER);
-    FrameRect(d->hDC, &r, brush);
-    DeleteObject(brush);
+    left = r.left;
+    top = r.top;
+    right = r.right - 1;
+    bottom = r.bottom - 1;
+    pen = CreatePen(PS_SOLID, 1, border);
+    oldPen = SelectObject(d->hDC, pen);
+    MoveToEx(d->hDC, left, top, 0);
+    LineTo(d->hDC, right, top);
+    MoveToEx(d->hDC, left, top, 0);
+    LineTo(d->hDC, left, bottom);
+    MoveToEx(d->hDC, right, top, 0);
+    LineTo(d->hDC, right, bottom);
+    if (!selected) {
+        MoveToEx(d->hDC, left, bottom, 0);
+        LineTo(d->hDC, right, bottom);
+    }
+    SelectObject(d->hDC, oldPen);
+    DeleteObject(pen);
     r.left += (LONG)(4 * g_scale);
     r.right -= (LONG)(4 * g_scale);
     SetBkMode(d->hDC, TRANSPARENT);
@@ -483,7 +610,6 @@ static void draw_tab_item(const DRAWITEMSTRUCT *d) {
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(d->hDC, oldFont);
 }
-
 static int is_owner_button(HWND hwnd) {
     return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
                     hwnd == g_openBtn || hwnd == g_detectBtn ||
@@ -571,7 +697,6 @@ static void create_controls(HWND hwnd) {
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_JAVA, inst, 0);
     g_tab = CreateWindowExW(0, L"SysTabControl32", L"",
                             WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS |
-                                0x2000 /* TCS_OWNERDRAWFIXED */ |
                                 0x8000 /* TCS_FOCUSNEVER */ |
                                 0x0400 /* TCS_FIXEDWIDTH */,
                             0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS_TAB, inst, 0);
@@ -1162,9 +1287,9 @@ static void handle_command(int id) {
     }
     switch (id) {
         case IDC_SETTINGS:
-            g_page = 1;
-            g_settingsTab = 0;
             if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
+            g_settingsTab = 0;
+            g_page = 1;
             if (g_memEdit) {
                 WCHAR memBuf[32];
                 wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
@@ -1172,6 +1297,7 @@ static void handle_command(int id) {
             }
             sync_page_controls();
             InvalidateRect(g_hwnd, 0, FALSE);
+            PostMessageW(g_hwnd, WM_APP_TAB_RESET, 0, 0);
             break;
         case IDC_LOGOUT:
             scopy(g_settings.username, L"novoline_rat", 64);
@@ -1458,8 +1584,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_NOTIFY: {
             NMHDR *nh = (NMHDR *)lp;
-            if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL) {
-                g_settingsTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
+            if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL &&
+                g_page == 1) {
+                int newTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
+                if (newTab >= 0) g_settingsTab = newTab;
                 sync_page_controls();
                 InvalidateRect(hwnd, 0, FALSE);
             }
@@ -1544,6 +1672,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
             }
+            return 0;
+        case WM_APP_TAB_RESET:
+            if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
+            g_settingsTab = 0;
+            sync_page_controls();
+            InvalidateRect(hwnd, 0, FALSE);
             return 0;
         case WM_APP_LAUNCH_STATUS:
             if (lp) free((void *)lp);
