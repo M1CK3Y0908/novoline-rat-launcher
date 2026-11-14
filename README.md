@@ -24,8 +24,8 @@ dist\NovolineLauncher.exe
 - 使用 **Win32 原生标题栏**：窗口标题、标题栏图标、最小化 / 最大化 / 关闭按钮全部由 Windows 系统绘制，不使用自绘标题栏元素。
 - 标题栏颜色：Windows 11 通过 DWM 设置为与客户区背景相同的 `#212429`；Windows 10 不支持逐窗口设置标题栏颜色，保持系统原生强调色。
 - 应用图标提取自 OpenNovoline 主菜单的 `novoline_blue.png`，并按 `#35314D` 的色相整体偏移（保留原图明暗与饱和度），生成 16 / 20 / 24 / 32 / 40 / 48 / 64 / 96 / 128 / 256 多尺寸 ICO；任务栏、标题栏和资源管理器会按实际 DPI 选择对应尺寸。
-- 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用原生 `BUTTON` 控件（Settings / Log out / Launch / Open / Detect / - / + / Done），没有自绘按钮或列表。
-- 所有按钮与窗口边缘、侧边栏分割线保持 10px 间距；按钮带 1px 浅色描边，并在 hover / 按下 / 禁用时切换描边与填充色。
+- 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用 Windows 原生 `BUTTON` 控件（Settings / Account / Launch / Browse / Reset / Add Offline / Microsoft Login / Complete / Login / Remove）；`Login` 使用绿色文字，`Remove` 使用红色文字。
+- 按钮使用系统原生绘制，禁用自定义 owner-draw 按钮，并通过 `WS_EX_COMPOSITED` 减少拖动窗口时的闪烁。
 - 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
@@ -97,7 +97,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - 窗口默认外框为 600 × 400（96 DPI / Windows 100% 缩放），客户区约 584 × 361；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
-- 按钮仍为原生 `BUTTON` 控件；通过 `WM_DRAWITEM` 绘制纯色背景，去掉系统主题的白色描边。鼠标悬停时背景变亮，按下时变暗，禁用时无 hover。列表仍由原生 `LISTBOX` 绘制。
+- 按钮已移除 owner-draw，使用系统原生绘制；`Login` 和 `Remove` 的文字颜色由按钮子类叠加绘制。账户列表仍为原生 `LISTBOX`。
 - 版本列表使用原生 `LISTBOX` 的 `LBS_OWNERDRAWFIXED` 模式：选中背景与按钮背景同为 `#343843`，鼠标悬停项使用更亮的背景，未选中项保持深色背景。
 - 窗口标题和标题栏图标由 Win32 原生绘制。
 - 当前版本采用离线档案启动；没有实现 Microsoft 账号登录。首次启动默认用户名为 `Player`。

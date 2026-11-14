@@ -60,6 +60,9 @@
 #define EM_SETCUEBANNER_LOCAL 0x1501
 #define WM_APP_MS_LOGIN_DONE (WM_APP + 21)
 #define WM_APP_AVATAR_READY (WM_APP + 22)
+typedef struct { NMHDR hdr; DWORD dwDrawStage; HDC hdc; RECT rc; DWORD dwItemSpec; UINT uItemState; LPARAM lItemlParam; COLORREF clrText; } NMCUSTOMDRAW_LOCAL;
+#define CDDS_PREPAINT_LOCAL 0x00000001
+#define CDRF_DODEFAULT_LOCAL 0x00000000
 #define TCIF_TEXT_LOCAL 0x0001
 #define TCM_GETCURSEL_LOCAL 0x130B
 #define TCM_SETCURSEL_LOCAL 0x130C
@@ -134,6 +137,7 @@ static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_p
 static HWND g_offlineLabel, g_offlineEdit, g_offlineBtn;
 static HWND g_msLabel, g_msLoginBtn, g_msCodeEdit, g_msCompleteBtn, g_msLogoutBtn, g_msStatus;
 static HWND g_accountList, g_accountUseBtn, g_accountRemoveBtn;
+static WNDPROC g_useBtnOldProc, g_removeBtnOldProc;
 static int g_msLoginRunning = 0;
 static WCHAR g_msLoginError[512];
 static WCHAR g_msCode[4096];
@@ -741,8 +745,6 @@ static void update_hover_states(void) {
     if (target == g_hoverButton) return;
     old = g_hoverButton;
     g_hoverButton = target;
-    if (old) InvalidateRect(old, 0, FALSE);
-    if (target) InvalidateRect(target, 0, FALSE);
     if (g_page == 0 && g_launchState == LAUNCH_RUNNING && (target == g_launchBtn || old == g_launchBtn)) {
         SetWindowTextW(g_launchBtn, target == g_launchBtn ? L"Shutdown" : L"Running");
     }
@@ -766,6 +768,8 @@ static void populate_version_list(void) {
     InvalidateRect(g_list, 0, FALSE);
 }
 
+static LRESULT CALLBACK account_action_btn_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
 static void create_controls(HWND hwnd) {
     HINSTANCE inst = (HINSTANCE)GetWindowLongPtrW(hwnd, GWLP_HINSTANCE);
     if (!g_listBrush) g_listBrush = CreateSolidBrush(RGB_BG);
@@ -774,25 +778,25 @@ static void create_controls(HWND hwnd) {
                                  LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, 0);
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS, inst, 0);
     g_logoutBtn = CreateWindowExW(0, L"BUTTON", L"Account",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LOGOUT, inst, 0);
     g_launchBtn = CreateWindowExW(0, L"BUTTON", L"Launch",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LAUNCH, inst, 0);
     g_openBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
-                                WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OPEN, inst, 0);
     g_detectBtn = CreateWindowExW(0, L"BUTTON", L"Browse",
-                                  WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                  WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_DETECT, inst, 0);
     g_resetGameBtn = CreateWindowExW(0, L"BUTTON", L"Reset",
-                                     WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                     WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_GAME, inst, 0);
     g_resetJavaBtn = CreateWindowExW(0, L"BUTTON", L"Reset",
-                                     WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                     WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_RESET_JAVA, inst, 0);
     g_tab = CreateWindowExW(0, L"SysTabControl32", L"",
                             WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS |
@@ -843,22 +847,22 @@ static void create_controls(HWND hwnd) {
                                     WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_EDIT, inst, 0);
     g_offlineBtn = CreateWindowExW(0, L"BUTTON", L"Add Offline",
-                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                   WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_BTN, inst, 0);
     g_msLabel = CreateWindowExW(0, L"STATIC", L"MICROSOFT ACCOUNT",
                                 WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LABEL, inst, 0);
     g_msLoginBtn = CreateWindowExW(0, L"BUTTON", L"Microsoft Login",
-                                   WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                   WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGIN_BTN, inst, 0);
     g_msLogoutBtn = CreateWindowExW(0, L"BUTTON", L"Log out",
-                                    WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                    WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGOUT_BTN, inst, 0);
     g_msCodeEdit = CreateWindowExW(0, L"EDIT", L"",
                                    WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_CODE_EDIT, inst, 0);
     g_msCompleteBtn = CreateWindowExW(0, L"BUTTON", L"Complete",
-                                      WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+                                      WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                       0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_COMPLETE_BTN, inst, 0);
     g_msStatus = CreateWindowExW(0, L"STATIC", L"",
                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
@@ -867,12 +871,20 @@ static void create_controls(HWND hwnd) {
                                     WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY |
                                         LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_LIST, inst, 0);
-    g_accountUseBtn = CreateWindowExW(0, L"BUTTON", L"Use",
-                                      WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+    g_accountUseBtn = CreateWindowExW(0, L"BUTTON", L"",
+                                      WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                       0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_USE, inst, 0);
-    g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"Remove",
-                                         WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+    g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"",
+                                         WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
                                          0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_REMOVE, inst, 0);
+    if (g_accountUseBtn) set_window_theme_none(g_accountUseBtn);
+    if (g_accountRemoveBtn) set_window_theme_none(g_accountRemoveBtn);
+    if (g_accountUseBtn)
+        g_useBtnOldProc = (WNDPROC)SetWindowLongPtrW(g_accountUseBtn, GWLP_WNDPROC,
+                                                     (LONG_PTR)account_action_btn_proc);
+    if (g_accountRemoveBtn)
+        g_removeBtnOldProc = (WNDPROC)SetWindowLongPtrW(g_accountRemoveBtn, GWLP_WNDPROC,
+                                                        (LONG_PTR)account_action_btn_proc);
     if (g_offlineEdit) {
         set_window_theme_none(g_offlineEdit);
         SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
@@ -898,6 +910,41 @@ static void create_controls(HWND hwnd) {
     if (g_list) set_control_theme(g_list);
     SetTimer(hwnd, 2, 40, 0);
 }
+
+static void draw_action_caption(HWND hwnd, HDC dc) {
+    RECT r;
+    const WCHAR *label = (hwnd == g_accountUseBtn) ? L"Login" : L"Remove";
+    COLORREF color = IsWindowEnabled(hwnd) ? ((hwnd == g_accountUseBtn) ? RGB(92, 200, 130)
+                                                                          : RGB(225, 82, 82))
+                                           : RGB(120, 124, 132);
+    HFONT font = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
+    int saved = SaveDC(dc);
+    GetClientRect(hwnd, &r);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, color);
+    SelectObject(dc, font ? font : g_font20);
+    DrawTextW(dc, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RestoreDC(dc, saved);
+}
+
+static LRESULT CALLBACK account_action_btn_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    WNDPROC oldProc = (hwnd == g_accountUseBtn) ? g_useBtnOldProc : g_removeBtnOldProc;
+    LRESULT result = oldProc ? CallWindowProcW(oldProc, hwnd, msg, wp, lp)
+                             : DefWindowProcW(hwnd, msg, wp, lp);
+    if (msg == WM_PAINT) {
+        HDC dc = GetDC(hwnd);
+        if (dc) {
+            draw_action_caption(hwnd, dc);
+            ReleaseDC(hwnd, dc);
+        }
+    } else if (msg == WM_PRINT || msg == WM_PRINTCLIENT) {
+        draw_action_caption(hwnd, (HDC)wp);
+    } else if (msg == WM_ENABLE || msg == WM_SETFOCUS || msg == WM_KILLFOCUS) {
+        InvalidateRect(hwnd, 0, FALSE);
+    }
+    return result;
+}
+
 
 static void apply_control_fonts(void) {
     HWND controls[9];
@@ -2272,10 +2319,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_DRAWITEM:
-            if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_BUTTON) {
-                draw_owner_button((const DRAWITEMSTRUCT *)lp);
-                return TRUE;
-            }
             if (((DRAWITEMSTRUCT *)lp)->CtlID == IDC_ACCOUNT_LIST) {
                 draw_account_item((const DRAWITEMSTRUCT *)lp);
                 return TRUE;
@@ -2303,6 +2346,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_NOTIFY: {
             NMHDR *nh = (NMHDR *)lp;
+            if (nh && nh->code == (UINT)-12 && (nh->idFrom == IDC_ACCOUNT_USE ||
+                                                 nh->idFrom == IDC_ACCOUNT_REMOVE)) {
+                NMCUSTOMDRAW_LOCAL *cd = (NMCUSTOMDRAW_LOCAL *)lp;
+                if (cd->dwDrawStage == CDDS_PREPAINT_LOCAL) {
+                    cd->clrText = nh->idFrom == IDC_ACCOUNT_USE ? RGB(92, 200, 130) : RGB(225, 82, 82);
+                    return CDRF_DODEFAULT_LOCAL;
+                }
+            }
             if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL &&
                 g_page == 1) {
                 int newTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
@@ -2339,6 +2390,22 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 handle_command(id);
             }
             return 0;
+        }
+        case WM_CTLCOLORBTN: {
+            HWND ctl = (HWND)lp;
+            HDC hdc = (HDC)wp;
+            SetBkColor(hdc, RGB_PANEL);
+            if (ctl == g_accountUseBtn) {
+                SetTextColor(hdc, RGB(92, 200, 130));
+                if (!g_panelBrush) g_panelBrush = CreateSolidBrush(RGB_PANEL);
+                return (LRESULT)g_panelBrush;
+            }
+            if (ctl == g_accountRemoveBtn) {
+                SetTextColor(hdc, RGB(225, 82, 82));
+                if (!g_panelBrush) g_panelBrush = CreateSolidBrush(RGB_PANEL);
+                return (LRESULT)g_panelBrush;
+            }
+            break;
         }
         case WM_CTLCOLOREDIT: {
             HDC hdc = (HDC)wp;
@@ -2585,7 +2652,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     wc.hbrBackground = CreateSolidBrush(RGB_BG);
     wc.lpszClassName = APP_CLASS;
     if (!RegisterClassExW(&wc)) return 0;
-    g_hwnd = CreateWindowExW(WS_EX_APPWINDOW, APP_CLASS, APP_TITLE,
+    g_hwnd = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_COMPOSITED, APP_CLASS, APP_TITLE,
                              WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                              CW_USEDEFAULT, CW_USEDEFAULT, 1200, 800, 0, 0, hi, 0);
     if (!g_hwnd) return 0;
