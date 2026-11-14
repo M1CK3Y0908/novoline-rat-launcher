@@ -1,12 +1,39 @@
 from PIL import Image
 import os
 import struct
+import colorsys
+from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, 'assets')
 SOURCE = os.path.join(ASSETS, 'logo_source.png')
+TARGET_RGB = (0x35, 0x31, 0x4D)
 SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
 CONTENT_RATIO = 0.88
+
+
+def shift_hue_to_target(image):
+    counts = Counter()
+    for r, g, b, a in image.getdata():
+        if a > 128:
+            counts[(r, g, b)] += 1
+    dominant = counts.most_common(1)[0][0]
+    source_hue = colorsys.rgb_to_hsv(*(v / 255 for v in dominant))[0]
+    target_hue = colorsys.rgb_to_hsv(*(v / 255 for v in TARGET_RGB))[0]
+    delta = target_hue - source_hue
+    out = Image.new('RGBA', image.size)
+    src = image.load()
+    dst = out.load()
+    for y in range(image.height):
+        for x in range(image.width):
+            r, g, b, a = src[x, y]
+            if a == 0:
+                dst[x, y] = (0, 0, 0, 0)
+                continue
+            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+            rr, gg, bb = colorsys.hsv_to_rgb((h + delta) % 1.0, s, v)
+            dst[x, y] = (round(rr * 255), round(gg * 255), round(bb * 255), a)
+    return out
 
 
 def resize_rgba(image, size):
@@ -78,6 +105,7 @@ def main():
     bbox = source.getchannel('A').getbbox()
     if bbox:
         source = source.crop(bbox)
+    source = shift_hue_to_target(source)
 
     images = {size: render_icon(source, size) for size in SIZES}
     render_icon(source, 1024).save(os.path.join(ASSETS, 'novoline_1024.png'))
