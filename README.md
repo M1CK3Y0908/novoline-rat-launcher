@@ -38,7 +38,7 @@ dist\NovolineLauncher.exe
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`
   - 默认 Java 目录：`C:\M1CK3Y\novoline.rat\java`
-  - 首次启动先检查 `java\bin\java.exe`；缺失时从 GitHub 下载 `java/jdk1.8.0_202` 并解压到 `java`；
+  - 首次启动先检查 `java\bin\java.exe`；缺失时下载 GitHub 上的 OpenJDK 8u202 JRE 压缩包（与 `java/jdk1.8.0_202` 同版本）并解压到 `java`；
   - 根据 `versions.rat` 中当前选中版本的 `jar` / `json` 地址，下载到 `versions\<版本 ID>\`；
   - 从 `libraries.minecraft.net` 补齐版本依赖，并将 native 解压到 `natives\<版本 ID>\`；
   - 自动解析版本 JSON、启动参数和资源索引；
@@ -46,7 +46,7 @@ dist\NovolineLauncher.exe
   - 使用离线 UUID / accessToken=0，不读取、不保存任何微软账号密码；
   - 启动日志：`C:\M1CK3Y\novoline.rat\logs\launcher.log` 和 `game.log`。
 
-> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 运行库下载包较大，首次启动会明显慢于后续启动。
+> 首次启动需要能访问 GitHub 和 `libraries.minecraft.net`，并且 `C:\M1CK3Y` 可写。Java 运行时压缩包约 37 MB。
 
 ## 文件结构
 

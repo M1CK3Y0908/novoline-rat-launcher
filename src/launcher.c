@@ -24,8 +24,7 @@
 #define NATIVE_CAP 32
 #define DEFAULT_GAME_DIR L"C:\\M1CK3Y\\novoline.rat"
 #define DEFAULT_JAVA_DIR L"C:\\M1CK3Y\\novoline.rat\\java"
-#define JAVA_ARCHIVE_URL L"https://github.com/M1CK3Y0908/novoline-rat-versions/archive/refs/heads/main.zip"
-#define JAVA_ARCHIVE_PREFIX L"novoline-rat-versions-main/java/jdk1.8.0_202"
+#define JAVA_ARCHIVE_URL L"https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/jdk8u202-b08/OpenJDK8U-jre_x64_windows_hotspot_8u202b08.zip"
 
 typedef struct LaunchPlan {
     WCHAR version[128];
@@ -1199,9 +1198,7 @@ static int run_java_extract(const WCHAR *archive, const WCHAR *dest) {
     sappend(cmd, archive, PATH_CAP * 4);
     sappend(cmd, L"\" -C \"", PATH_CAP * 4);
     sappend(cmd, dest, PATH_CAP * 4);
-    sappend(cmd, L"\" --strip-components=3 \"", PATH_CAP * 4);
-    sappend(cmd, JAVA_ARCHIVE_PREFIX, PATH_CAP * 4);
-    sappend(cmd, L"\"", PATH_CAP * 4);
+    sappend(cmd, L"\" --strip-components=1", PATH_CAP * 4);
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
@@ -1253,15 +1250,16 @@ static int ensure_java_runtime(const LaunchRequest *request, WCHAR *error, int e
     ensure_dir_tree(s->gameDir);
     path_join(downloads, PATH_CAP, s->gameDir, L"downloads");
     ensure_dir_tree(downloads);
-    path_join(archive, PATH_CAP, downloads, L"java-runtime.zip");
+    path_join(archive, PATH_CAP, downloads, L"java8-jre.zip");
     if (!file_exists(archive)) {
-        if (!download_file(JAVA_ARCHIVE_URL, archive, L"Downloading Java runtime", status,
+        if (!download_file(JAVA_ARCHIVE_URL, archive, L"Downloading Java 8 runtime", status,
                            error, errorCap))
             return 0;
     }
     if (status) status(L"Extracting Java runtime...");
     ensure_dir_tree(root);
     if (!run_java_extract(archive, root) || !file_exists(exe)) {
+        DeleteFileW(archive);
         scopy(error, L"Could not extract the Java runtime archive.", errorCap);
         return 0;
     }
