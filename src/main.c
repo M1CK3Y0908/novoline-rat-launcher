@@ -1079,75 +1079,91 @@ static void draw_list_item(const DRAWITEMSTRUCT *d) {
 }
 
 static void draw_play_icon(HDC dc, int cx, int cy, int size) {
-    int half = size / 2;
-    int width = (int)(size * 0.866f);
-    POINT p[3];
-    HBRUSH brush = CreateSolidBrush(RGB(66, 200, 120));
-    HGDIOBJ oldBrush = SelectObject(dc, brush);
-    HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-    p[0].x = cx - width / 2; p[0].y = cy - half;
-    p[1].x = cx - width / 2; p[1].y = cy + half;
-    p[2].x = cx + width / 2; p[2].y = cy;
-    Polygon(dc, p, 3);
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(brush);
+    GpGraphics *graphics = 0;
+    GpSolidFill *fill = 0;
+    GpPen *pen = 0;
+    GpPointF p[3];
+    float penWidth = size * 0.26f;
+    float height = size - penWidth;
+    float width = height * 0.866f;
+    if (GdipCreateFromHDC(dc, &graphics) != 0) return;
+    GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
+    p[0].X = (float)cx - width / 2.0f; p[0].Y = (float)cy - height / 2.0f;
+    p[1].X = (float)cx - width / 2.0f; p[1].Y = (float)cy + height / 2.0f;
+    p[2].X = (float)cx + width / 2.0f; p[2].Y = (float)cy;
+    if (GdipCreateSolidFill((ARGB)0xFF00E818, &fill) == 0) {
+        GdipFillPolygon(graphics, (GpBrush *)fill, p, 3, GpFillModeWinding);
+        if (GdipCreatePen1((ARGB)0xFF00E818, penWidth, GpUnitPixel, &pen) == 0) {
+            GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
+            GdipSetPenLineJoin(pen, GpLineJoinRound);
+            GdipDrawLine(graphics, pen, p[0].X, p[0].Y, p[1].X, p[1].Y);
+            GdipDrawLine(graphics, pen, p[1].X, p[1].Y, p[2].X, p[2].Y);
+            GdipDrawLine(graphics, pen, p[2].X, p[2].Y, p[0].X, p[0].Y);
+            GdipDeletePen(pen);
+        }
+        GdipDeleteBrush((GpBrush *)fill);
+    }
+    GdipDeleteGraphics(graphics);
 }
 
 static void draw_spinner_icon(HDC dc, int cx, int cy, int size) {
     static const int dirX[8] = { 1000, 707, 0, -707, -1000, -707, 0, 707 };
     static const int dirY[8] = { 0, 707, 1000, 707, 0, -707, -1000, -707 };
-    static const unsigned char levels[8] = { 255, 230, 205, 180, 155, 130, 105, 80 };
-    int inner = (int)(size * 0.18f);
-    int outer = (int)(size * 0.44f);
-    int penWidth = (int)(size * 0.12f);
+    static const unsigned char alphaLevels[8] = { 255, 220, 185, 150, 115, 80, 50, 25 };
+    GpGraphics *graphics = 0;
+    float inner = size * 0.28f;
+    float outer = size * 0.44f;
+    float penWidth = size * 0.12f;
     int phase = (int)((GetTickCount() / 100) & 7);
     int i;
-    if (penWidth < 2) penWidth = 2;
-    for (i = 0; i < 8; i++) {
-        int level = levels[(i + phase) & 7];
-        int x1 = cx + dirX[i] * inner / 1000;
-        int y1 = cy + dirY[i] * inner / 1000;
-        int x2 = cx + dirX[i] * outer / 1000;
-        int y2 = cy + dirY[i] * outer / 1000;
-        LOGBRUSH lb;
-        HPEN pen;
-        HGDIOBJ oldPen;
-        lb.lbStyle = BS_SOLID;
-        lb.lbColor = RGB(level, level, level);
-        lb.lbHatch = 0;
-        pen = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND,
-                           penWidth, &lb, 0, 0);
-        if (!pen) pen = CreatePen(PS_SOLID, penWidth, RGB(level, level, level));
-        oldPen = SelectObject(dc, pen);
-        MoveToEx(dc, x1, y1, 0);
-        LineTo(dc, x2, y2);
-        SelectObject(dc, oldPen);
-        DeleteObject(pen);
-    }
-}
-
-static void draw_octagon_icon(HDC dc, int cx, int cy, int size) {
-    GpGraphics *graphics = 0;
-    GpSolidFill *fill = 0;
-    GpPointF p[8];
-    float radius = size * 0.54f;
-    float a = radius * 0.9238795f;
-    float b = radius * 0.3826834f;
     if (GdipCreateFromHDC(dc, &graphics) != 0) return;
     GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
-    p[0].X = (float)cx + a; p[0].Y = (float)cy + b;
-    p[1].X = (float)cx + b; p[1].Y = (float)cy + a;
-    p[2].X = (float)cx - b; p[2].Y = (float)cy + a;
-    p[3].X = (float)cx - a; p[3].Y = (float)cy + b;
-    p[4].X = (float)cx - a; p[4].Y = (float)cy - b;
-    p[5].X = (float)cx - b; p[5].Y = (float)cy - a;
-    p[6].X = (float)cx + b; p[6].Y = (float)cy - a;
-    p[7].X = (float)cx + a; p[7].Y = (float)cy - b;
-    if (GdipCreateSolidFill((ARGB)0xFFD64040, &fill) == 0) {
-        GdipFillPolygon(graphics, (GpBrush *)fill, p, 8, GpFillModeWinding);
+    for (i = 0; i < 8; i++) {
+        GpPen *pen = 0;
+        ARGB color = ((ARGB)alphaLevels[(i + phase) & 7] << 24) | 0x00FFFFFF;
+        float x1 = (float)cx + (float)dirX[i] * inner / 1000.0f;
+        float y1 = (float)cy + (float)dirY[i] * inner / 1000.0f;
+        float x2 = (float)cx + (float)dirX[i] * outer / 1000.0f;
+        float y2 = (float)cy + (float)dirY[i] * outer / 1000.0f;
+        if (GdipCreatePen1(color, penWidth, GpUnitPixel, &pen) != 0) continue;
+        GdipSetPenLineCap197819(pen, GpLineCapRound, GpLineCapRound, GpLineCapFlat);
+        GdipDrawLine(graphics, pen, x1, y1, x2, y2);
+        GdipDeletePen(pen);
+    }
+    GdipDeleteGraphics(graphics);
+}
+
+static void draw_close_icon(HDC dc, int cx, int cy, int size) {
+    GpGraphics *graphics = 0;
+    GpSolidFill *fill = 0;
+    GpPath *path = 0;
+    float s = size * 0.84f;
+    float half = s / 2.0f;
+    float left = (float)cx - half;
+    float top = (float)cy - half;
+    float right = (float)cx + half;
+    float bottom = (float)cy + half;
+    float r = s * 0.24f;
+    if (GdipCreateFromHDC(dc, &graphics) != 0) return;
+    GdipSetSmoothingMode(graphics, GpSmoothingModeAntiAlias);
+    if (GdipCreatePath(GpFillModeWinding, &path) != 0) {
+        GdipDeleteGraphics(graphics);
+        return;
+    }
+    GdipAddPathLine(path, left + r, top, right - r, top);
+    GdipAddPathArc(path, right - 2 * r, top, 2 * r, 2 * r, 270, 90);
+    GdipAddPathLine(path, right, top + r, right, bottom - r);
+    GdipAddPathArc(path, right - 2 * r, bottom - 2 * r, 2 * r, 2 * r, 0, 90);
+    GdipAddPathLine(path, right - r, bottom, left + r, bottom);
+    GdipAddPathArc(path, left, bottom - 2 * r, 2 * r, 2 * r, 90, 90);
+    GdipAddPathLine(path, left, bottom - r, left, top + r);
+    GdipAddPathArc(path, left, top, 2 * r, 2 * r, 180, 90);
+    GdipClosePathFigure(path);
+    if (GdipCreateSolidFill((ARGB)0xFFFF0000, &fill) == 0) {
+        GdipFillPath(graphics, (GpBrush *)fill, path);
         GdipDeleteBrush((GpBrush *)fill);
     }
+    GdipDeletePath(path);
     GdipDeleteGraphics(graphics);
 }
 
@@ -1206,14 +1222,14 @@ static void draw_owner_button(const DRAWITEMSTRUCT *d) {
             total = iconSize + gap + textSize.cx;
             left = d->rcItem.left + ((d->rcItem.right - d->rcItem.left) - total) / 2;
             cy = (d->rcItem.top + d->rcItem.bottom) / 2;
-            if (iconKind == 1) draw_play_icon(d->hDC, left + iconSize / 2, cy, iconSize);
-            else if (iconKind == 2) draw_spinner_icon(d->hDC, left + iconSize / 2, cy, iconSize);
-            else draw_octagon_icon(d->hDC, left + iconSize / 2, cy, iconSize);
             tr.left = left + iconSize + gap;
             tr.top = d->rcItem.top;
             tr.right = d->rcItem.right;
             tr.bottom = d->rcItem.bottom;
             DrawTextW(d->hDC, label, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            if (iconKind == 1) draw_play_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            else if (iconKind == 2) draw_spinner_icon(d->hDC, left + iconSize / 2, cy, iconSize);
+            else draw_close_icon(d->hDC, left + iconSize / 2, cy, iconSize);
         } else {
             DrawTextW(d->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
