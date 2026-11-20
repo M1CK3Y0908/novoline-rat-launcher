@@ -1,0 +1,26 @@
+{
+  "name": "Novoline.RAT",
+  "versions": [
+    {
+      "type": "Release",
+      "date": "111526",
+      "description": "[+]Add PostProcessing (Tenacity Dual-Kawase Blur & Bloom Pipeline)\n[+]Add ThemeColor (Single, Double, Triple, Rainbow, Astolfo)\n[+]Add Entity & TileEntity Occlusion Culling\n[+]Add Classic Mode to TargetHUD\n[+]Add Watchdog Mode to Speed (novoline-eclipse-ready)\n[+]Add LiquidBounce Packet AutoBlock to KillAura\n[+]Add Customizable Font & Size Settings for Text Modules\n[+]Add Nested Scissor Masking for ClickGUI Expand/Collapse Animations\n[+]Add Dropdown Animation for ClickGUI Combo & MultiCombo Settings\n[-]Remove Display Category (Renamed to Client)\n[-]Remove Independent Module Color Pickers (Unified via ThemeColor)\n[-]Remove Legacy Hardcoded Font Outlines in HUD (Replaced with Shadows)\n[/]Recode KillAura (RavenXD Base)\n[/]Recode Scaffold (RavenXD Mechanics with Novoline Tower)\n[/]Recode Blur & Bloom Shader Engine (Tenacity Shader Architecture)\n[/]Optimize ClickGUI Rendering (Fix Exit Flash, Slider Bleeding & Framebuffer Leaks)\n[/]Fix ClickGUI Closing Shadow Persistence & Stepped Geometry Alignment\n[/]Fix 1-Frame Lag & Synchronization for HUD Glow & Drop Shadows\n[/]Update Module Categories (Move Watermark, Notifications, ArrayList, TargetHUD to Visual)\n[/]Update Default Settings (Theme #35314D, Rubik 16 Font, ArrayList 50% Black, Desaturation Off)\n[/]Update Base to OpenNovoline (Build 111526)",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline.json"
+    },
+    {
+      "type": "Release",
+      "date": "111426",
+      "description": "[+]Add ArmorHUD\n[+]Add Infomation\n[+]Add InventoryHUD\n[+]Add ModuleList\n[+]Add PotionHUD\n[+]Add TargetList\n[+]Add Watermark\n[-]Remove HUD\n[/]Recode Killaura (OpenRaven)\n[/]Update Optifine (H8 Ultra -> I7 SRC Version)\n[/]Recode Scaffold",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-111426/Release-111426.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-111426/Release-111426.json"
+    },
+    {
+      "type": "Release",
+      "date": "110826",
+      "description": "[/]Update UID Text and Color (M1CK3Y0908, Dynamic theme color)",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-110826/Release-110826.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-110826/Release-110826.json"
+    }
+  ]
+}
