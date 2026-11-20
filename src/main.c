@@ -365,23 +365,33 @@ static void launch_status(const WCHAR *text) {
 }
 
 static void remote_version_id(const VersionEntry *entry, WCHAR *out, int cap) {
-    const WCHAR *name;
-    int i = 0;
     if (!out || cap <= 0) return;
     out[0] = 0;
-    if (!entry || !entry->jarUrl[0]) {
-        scopy(out, L"Novoline", cap);
-        return;
+    if (entry && entry->type[0] && entry->date[0]) {
+        int n = 0, i;
+        for (i = 0; entry->type[i] && n < cap - 1; i++) {
+            WCHAR c = entry->type[i];
+            if ((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
+                out[n++] = c;
+        }
+        for (i = 0; entry->date[i] && n < cap - 1; i++) {
+            WCHAR c = entry->date[i];
+            if ((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
+                out[n++] = c;
+        }
+        out[n] = 0;
     }
-    name = wcsrchr(entry->jarUrl, L'/');
-    name = name ? name + 1 : entry->jarUrl;
-    while (name[i] && i < cap - 1) {
-        out[i] = name[i];
-        i++;
+    if (!out[0]) {
+        if (entry && entry->jarUrl[0]) {
+            const WCHAR *name = wcsrchr(entry->jarUrl, L'/');
+            int i = 0;
+            name = name ? name + 1 : entry->jarUrl;
+            while (name[i] && i < cap - 1) { out[i] = name[i]; i++; }
+            out[i] = 0;
+            if (i > 4 && !wcscmp(out + i - 4, L".jar")) out[i - 4] = 0;
+        }
     }
-    out[i] = 0;
-    if (i > 4 && !wcscmp(out + i - 4, L".jar")) out[i - 4] = 0;
-    if (!out[0]) scopy(out, L"Novoline", cap);
+    if (!out[0]) scopy(out, L"Release111526", cap);
 }
 
 /* ---------- GDI+ helpers ---------- */

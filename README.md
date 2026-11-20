@@ -29,7 +29,7 @@ dist\NovolineLauncher.exe
 - 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
-- 启动时从 `https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions.rat` 获取版本列表和右侧发行说明，使用后台线程下载并解析，不阻塞界面。
+- 启动时从 `https://github.com/M1CK3Y0908/novoline-rat-launcher/raw/refs/heads/main/versions.rat` 获取版本列表和右侧发行说明，使用后台线程下载并解析，不阻塞界面。
 - 数据尚未返回时，左侧显示 `Loading...`，右侧显示加载提示；不会显示任何本地内置版本列表。
 - 网络不可用或数据解析失败时，保持列表为空并显示错误信息，`Launch` 按钮禁用。
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。

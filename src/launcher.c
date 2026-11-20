@@ -616,12 +616,6 @@ int detect_version(const LauncherSettings *s, WCHAR *versionId, int versionCap,
         path_join(jp, PATH_CAP, vp, fd.cFileName);
         sappend(jp, L".json", PATH_CAP);
         if (!file_exists(jp)) continue;
-        if (!wcscmp(fd.cFileName, L"Novoline")) {
-            found = 1;
-            scopy(bestName, fd.cFileName, 128);
-            bestTime = fd.ftLastWriteTime;
-            break;
-        }
         if (!found || newer_filetime(&fd.ftLastWriteTime, &bestTime)) {
             found = 1;
             scopy(bestName, fd.cFileName, 128);
@@ -1035,10 +1029,19 @@ static int plan_load_version(LaunchPlan *p, const WCHAR *gameDir, const WCHAR *i
     }
     if (depth == 0) {
         scopy(p->version, id, 128);
+        scopy(p->jarId, id, 128);
         {
             const WCHAR *jar = json_get_string(v, "jar", 0);
-            if (jar && jar[0]) scopy(p->jarId, jar, 128);
-            else scopy(p->jarId, id, 128);
+            if (jar && jar[0]) {
+                WCHAR checkJar[PATH_CAP];
+                path_join(checkJar, PATH_CAP, gameDir, L"versions");
+                path_join(checkJar, PATH_CAP, checkJar, id);
+                path_join(checkJar, PATH_CAP, checkJar, id);
+                sappend(checkJar, L".jar", PATH_CAP);
+                if (!file_exists(checkJar)) {
+                    scopy(p->jarId, jar, 128);
+                }
+            }
         }
     }
     {
@@ -1450,6 +1453,26 @@ static int ensure_version_files(const LaunchRequest *request, WCHAR *versionId, 
     path_join(json, PATH_CAP, dir, versionId);
     sappend(json, L".json", PATH_CAP);
     if (!file_exists(jar)) {
+        if (!wcsncmp(versionId, L"Release", 7) && versionId[7] != L'-') {
+            WCHAR altDir[PATH_CAP], altJar[PATH_CAP], altJson[PATH_CAP];
+            path_join(altDir, PATH_CAP, s->gameDir, L"versions");
+            sappend(altDir, L"\\Release-", PATH_CAP);
+            sappend(altDir, versionId + 7, PATH_CAP);
+            path_join(altJar, PATH_CAP, altDir, L"Release-");
+            sappend(altJar, versionId + 7, PATH_CAP);
+            sappend(altJar, L".jar", PATH_CAP);
+            path_join(altJson, PATH_CAP, altDir, L"Release-");
+            sappend(altJson, versionId + 7, PATH_CAP);
+            sappend(altJson, L".json", PATH_CAP);
+            if (file_exists(altJar)) {
+                CopyFileW(altJar, jar, FALSE);
+            }
+            if (!file_exists(json) && file_exists(altJson)) {
+                CopyFileW(altJson, json, FALSE);
+            }
+        }
+    }
+    if (!file_exists(jar)) {
         scopy(label, L"Downloading version ", 256);
         sappend(label, versionId, 256);
         if (!download_file(request->jarUrl, jar, label, status, error, errorCap)) return 0;
@@ -1518,6 +1541,163 @@ static int ensure_libraries(const WCHAR *gameDir, const WCHAR *versionJson,
         }
     }
     json_free(root);
+    return 1;
+}
+
+static int ensure_assets(const WCHAR *gameDir, const WCHAR *versionJson,
+                         LaunchStatusFn status, WCHAR *error, int errorCap) {
+    WCHAR indexId[64];
+    WCHAR indexUrl[1024];
+    WCHAR assetsDir[PATH_CAP], indexesDir[PATH_CAP], indexDest[PATH_CAP];
+    WCHAR objectsDir[PATH_CAP];
+    WCHAR localObj1[PATH_CAP], localObj2[PATH_CAP];
+    WCHAR localIdx1[PATH_CAP], localIdx2[PATH_CAP];
+    WCHAR appData[PATH_CAP];
+    Json *vRoot = 0;
+    Json *idxRoot = 0;
+    const Json *objects = 0;
+    int count = 0, i;
+
+    scopy(indexId, L"1.8", 64);
+    indexUrl[0] = 0;
+    localObj1[0] = 0;
+    localObj2[0] = 0;
+    localIdx1[0] = 0;
+    localIdx2[0] = 0;
+    appData[0] = 0;
+
+    vRoot = json_parse_file(versionJson);
+    if (vRoot) {
+        const Json *ai = json_get(vRoot, "assetIndex");
+        if (json_is_object(ai)) {
+            const WCHAR *id = json_get_string(ai, "id", 0);
+            const WCHAR *u = json_get_string(ai, "url", 0);
+            if (id && id[0]) scopy(indexId, id, 64);
+            if (u && u[0]) scopy(indexUrl, u, 1024);
+        } else {
+            const WCHAR *as = json_get_string(vRoot, "assets", 0);
+            if (as && as[0]) scopy(indexId, as, 64);
+        }
+        json_free(vRoot);
+    }
+    if (!indexUrl[0] || wcsstr(indexUrl, L"f6ad102bcaa53b1a58358f16e376d548d4a66e44")) {
+        scopy(indexUrl, L"https://piston-meta.mojang.com/v1/packages/f6ad102bcaa53b1a58358f16e376d548d44933ec/1.8.json", 1024);
+    }
+
+    path_join(assetsDir, PATH_CAP, gameDir, L"assets");
+    ensure_dir_tree(assetsDir);
+    path_join(indexesDir, PATH_CAP, assetsDir, L"indexes");
+    ensure_dir_tree(indexesDir);
+    path_join(indexDest, PATH_CAP, indexesDir, indexId);
+    sappend(indexDest, L".json", PATH_CAP);
+
+    /* Candidate 1: D:\Minecraft\.minecraft\assets */
+    if (dir_exists(L"D:\\Minecraft\\.minecraft\\assets")) {
+        path_join(localIdx1, PATH_CAP, L"D:\\Minecraft\\.minecraft\\assets\\indexes", indexId);
+        sappend(localIdx1, L".json", PATH_CAP);
+        scopy(localObj1, L"D:\\Minecraft\\.minecraft\\assets\\objects", PATH_CAP);
+    }
+    /* Candidate 2: %APPDATA%\.minecraft\assets */
+    if (ExpandEnvironmentStringsW(L"%APPDATA%\\.minecraft\\assets", appData, PATH_CAP) && dir_exists(appData)) {
+        path_join(localIdx2, PATH_CAP, appData, L"indexes");
+        path_join(localIdx2, PATH_CAP, localIdx2, indexId);
+        sappend(localIdx2, L".json", PATH_CAP);
+        scopy(localObj2, appData, PATH_CAP);
+        sappend(localObj2, L"\\objects", PATH_CAP);
+    }
+
+    /* 1. Ensure indexes\<indexId>.json */
+    if (!file_exists(indexDest)) {
+        if (localIdx1[0] && file_exists(localIdx1)) {
+            CopyFileW(localIdx1, indexDest, FALSE);
+        } else if (localIdx2[0] && file_exists(localIdx2)) {
+            CopyFileW(localIdx2, indexDest, FALSE);
+        } else {
+            if (status) status(L"Downloading assets index...");
+            if (!download_file(indexUrl, indexDest, L"Downloading assets index", status, error, errorCap)) {
+                if (!download_file(L"https://piston-meta.mojang.com/v1/packages/f6ad102bcaa53b1a58358f16e376d548d44933ec/1.8.json",
+                                   indexDest, L"Downloading assets index", status, error, errorCap)) {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    /* 2. Ensure objects */
+    path_join(objectsDir, PATH_CAP, assetsDir, L"objects");
+    ensure_dir_tree(objectsDir);
+
+    idxRoot = json_parse_file(indexDest);
+    if (!idxRoot) {
+        scopy(error, L"Could not parse assets index.", errorCap);
+        return 0;
+    }
+    objects = json_get(idxRoot, "objects");
+    count = json_count(objects);
+    if (!json_is_object(objects) || count <= 0) {
+        json_free(idxRoot);
+        return 1;
+    }
+
+    for (i = 0; i < count; i++) {
+        const Json *entry = json_at(objects, i);
+        const WCHAR *hash;
+        WCHAR sub[4], destObj[PATH_CAP], destSubDir[PATH_CAP], srcObj[PATH_CAP], url[256];
+        if (!entry) continue;
+        hash = json_get_string(entry, "hash", 0);
+        if (!hash || wcslen(hash) < 2) continue;
+
+        sub[0] = hash[0];
+        sub[1] = hash[1];
+        sub[2] = 0;
+
+        path_join(destSubDir, PATH_CAP, objectsDir, sub);
+        path_join(destObj, PATH_CAP, destSubDir, hash);
+
+        if (file_exists(destObj)) continue;
+
+        ensure_dir_tree(destSubDir);
+
+        /* Try local candidate 1 */
+        if (localObj1[0]) {
+            path_join(srcObj, PATH_CAP, localObj1, sub);
+            path_join(srcObj, PATH_CAP, srcObj, hash);
+            if (file_exists(srcObj)) {
+                CopyFileW(srcObj, destObj, FALSE);
+                if (status && (i % 50 == 0 || i + 1 == count)) {
+                    WCHAR msg[128];
+                    wsprintfW(msg, L"Completing assets %d%%...", (i + 1) * 100 / count);
+                    status(msg);
+                }
+                continue;
+            }
+        }
+
+        /* Try local candidate 2 */
+        if (localObj2[0]) {
+            path_join(srcObj, PATH_CAP, localObj2, sub);
+            path_join(srcObj, PATH_CAP, srcObj, hash);
+            if (file_exists(srcObj)) {
+                CopyFileW(srcObj, destObj, FALSE);
+                if (status && (i % 50 == 0 || i + 1 == count)) {
+                    WCHAR msg[128];
+                    wsprintfW(msg, L"Completing assets %d%%...", (i + 1) * 100 / count);
+                    status(msg);
+                }
+                continue;
+            }
+        }
+
+        /* Download from Mojang resources */
+        wsprintfW(url, L"https://resources.download.minecraft.net/%ls/%ls", sub, hash);
+        if (status && (i % 10 == 0 || i + 1 == count)) {
+            WCHAR msg[128];
+            wsprintfW(msg, L"Downloading assets %d%%...", (i + 1) * 100 / count);
+            status(msg);
+        }
+        download_file(url, destObj, L"Downloading assets", status, error, errorCap);
+    }
+    json_free(idxRoot);
     return 1;
 }
 
@@ -1954,6 +2134,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         path_join(versionJson, PATH_CAP, versionJson, versionId);
         sappend(versionJson, L".json", PATH_CAP);
         if (!ensure_libraries(s->gameDir, versionJson, status, message, messageCap)) return 0;
+        if (!ensure_assets(s->gameDir, versionJson, status, message, messageCap)) return 0;
     }
     plan = (LaunchPlan *)calloc(1, sizeof(LaunchPlan));
     if (!plan) { set_message(message, messageCap, L"Out of memory."); return 0; }
@@ -2011,9 +2192,6 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
     path_join(versionDir, PATH_CAP, s->gameDir, L"versions");
     path_join(versionDir, PATH_CAP, versionDir, versionId);
     path_join(assetsRoot, PATH_CAP, s->gameDir, L"assets");
-    if (!dir_exists(assetsRoot) && dir_exists(L"D:\\Minecraft\\.minecraft\\assets")) {
-        scopy(assetsRoot, L"D:\\Minecraft\\.minecraft\\assets", PATH_CAP);
-    }
     path_join(gameAssets, PATH_CAP, assetsRoot, L"virtual\\legacy");
     if (s->accountType == 1) {
         if (!s->accessToken[0] || !s->uuid[0] || s->tokenExpires <= (long long)time(0) + 120) {
@@ -2055,7 +2233,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         scopy(token, plan->tokens[i], TOKEN_LEN * 2);
         replace_all(token, TOKEN_LEN * 2, L"${auth_player_name}", s->username);
         replace_all(token, TOKEN_LEN * 2, L"${version_name}", plan->version);
-        replace_all(token, TOKEN_LEN * 2, L"${game_directory}", versionDir);
+        replace_all(token, TOKEN_LEN * 2, L"${game_directory}", s->gameDir);
         replace_all(token, TOKEN_LEN * 2, L"${assets_root}", assetsRoot);
         replace_all(token, TOKEN_LEN * 2, L"${assets_index_name}", plan->assetIndex);
         replace_all(token, TOKEN_LEN * 2, L"${auth_uuid}", uuid);
@@ -2094,7 +2272,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
                 sappend(header, L"\r\nVersion: ", CMD_CAP + 1024);
                 sappend(header, plan->version, CMD_CAP + 1024);
                 sappend(header, L"\r\nGame directory: ", CMD_CAP + 1024);
-                sappend(header, versionDir, CMD_CAP + 1024);
+                sappend(header, s->gameDir, CMD_CAP + 1024);
                 sappend(header, L"\r\n\r\nCommand:\r\n", CMD_CAP + 1024);
                 sappend(header, cmdHeap, CMD_CAP + 1024);
                 write_launch_log(s->gameDir, header);
@@ -2110,7 +2288,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
            so no console/command prompt shows, and DETACHED_PROCESS detached. */
         if (CreateProcessW(NULL, cmdHeap, NULL, NULL, FALSE,
                            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT,
-                           NULL, versionDir, &si, &pi)) {
+                           NULL, s->gameDir, &si, &pi)) {
             CloseHandle(pi.hThread);
             if (processOut) {
                 *processOut = pi.hProcess;

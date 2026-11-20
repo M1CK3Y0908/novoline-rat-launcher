@@ -3,6 +3,27 @@
   "versions": [
     {
       "type": "Release",
+      "date": "111826",
+      "description": "[+]Add Outline MultiCombo to ArrayList (Top, Bottom, Left, Right)\n[+]Add Full Enclosure Perimeter Outline Style for ArrayList\n[+]Add 0% Discrete Row-by-Row Mode to ThemeColor (One Solid Color Per Row Without Gradient)\n[+]Add Independent Shadow and Glow Intensity Sliders in PostProcessing\n[-]Remove ArrayList Right Line Checkbox (Replaced by Outline MultiCombo)\n[-]Remove Background Darkening and Tint from PostProcessing Blur\n[/]Recode Glow Engine to Content-Aware Exposure Bloom (Faithful Content Color Halo, Zero White Blowout)\n[/]Recode Drop Shadow Engine to Fixed 50px Natural Gaussian Falloff with Pure Alpha Scaling\n[/]Recode ArrayList Rendering Pipeline (Batch Draw Calls & Pre-allocated Zero-Lag Cache)\n[/]Optimize ArrayList Performance (Eliminate Dropdown Frame Drops & Dynamic Allocations)\n[/]Fix ArrayList Outline Colors to Strictly Match Corresponding Row Text Colors\n[/]Fix Glow Layering Order (Sharp Crisp UI on Top, Vibrant Saturated Halo Underneath)\n[/]Update Gradient Length Scaling by 10 (Old 10% Now Corresponds to 100% / 100px Max)\n[/]Update ThemeColor Calculation (Restore Mathematical Cosine & Periodic Modulo Precision)\n[/]Update Default Theme to Double Color (#35314D Slate Purple & #C7C3E5 Pastel Lavender)",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline.json"
+    },
+    {
+      "type": "Release",
+      "date": "111726",
+      "description": "[+]Add 50px Fixed Range Drop Shadow with Natural Gaussian Falloff\n[/]Recode Shadow Intensity to Strictly Control Alpha Opacity (Preserving 50px Gradient Spread)\n[/]Optimize Drop Shadow Gradient Falloff (Zero Banding, Smooth Exponential Attenuation)",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline.json"
+    },
+    {
+      "type": "Release",
+      "date": "111626",
+      "description": "[+]Add Glow Toggle Switch to PostProcessing (Theme Color Glow vs Pure Black Shadow)\n[+]Add Tenacity-accurate 8-iteration 10-offset Dual-Kawase Bloom Scaling\n[-]Remove Background Darkening and Tint from PostProcessing Blur\n[/]Recode PostProcessing Settings (Simplified to Direct 0-100% Intensity Sliders)\n[/]Restore Native Geometry Stencil Shadows for Non-Text HUD Elements\n[/]Update Default Settings (Theme #35314D, Rubik 16 Font, 50% Black ArrayList Background)",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline.json"
+    },
+    {
+      "type": "Release",
       "date": "111526",
       "description": "[+]Add PostProcessing (Tenacity Dual-Kawase Blur & Bloom Pipeline)\n[+]Add ThemeColor (Single, Double, Triple, Rainbow, Astolfo)\n[+]Add Entity & TileEntity Occlusion Culling\n[+]Add Classic Mode to TargetHUD\n[+]Add Watchdog Mode to Speed (novoline-eclipse-ready)\n[+]Add LiquidBounce Packet AutoBlock to KillAura\n[+]Add Customizable Font & Size Settings for Text Modules\n[+]Add Nested Scissor Masking for ClickGUI Expand/Collapse Animations\n[+]Add Dropdown Animation for ClickGUI Combo & MultiCombo Settings\n[-]Remove Display Category (Renamed to Client)\n[-]Remove Independent Module Color Pickers (Unified via ThemeColor)\n[-]Remove Legacy Hardcoded Font Outlines in HUD (Replaced with Shadows)\n[/]Recode KillAura (RavenXD Base)\n[/]Recode Scaffold (RavenXD Mechanics with Novoline Tower)\n[/]Recode Blur & Bloom Shader Engine (Tenacity Shader Architecture)\n[/]Optimize ClickGUI Rendering (Fix Exit Flash, Slider Bleeding & Framebuffer Leaks)\n[/]Fix ClickGUI Closing Shadow Persistence & Stepped Geometry Alignment\n[/]Fix 1-Frame Lag & Synchronization for HUD Glow & Drop Shadows\n[/]Update Module Categories (Move Watermark, Notifications, ArrayList, TargetHUD to Visual)\n[/]Update Default Settings (Theme #35314D, Rubik 16 Font, ArrayList 50% Black, Desaturation Off)\n[/]Update Base to OpenNovoline (Build 111526)",
       "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline.jar",

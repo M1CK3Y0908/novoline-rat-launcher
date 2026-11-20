@@ -14,6 +14,8 @@ typedef struct VersionEntry {
     WCHAR description[VERSION_DESC_CAP];
     WCHAR jarUrl[VERSION_URL_CAP];
     WCHAR jsonUrl[VERSION_URL_CAP];
+    WCHAR type[32];
+    WCHAR date[32];
 } VersionEntry;
 
 typedef struct VersionList {

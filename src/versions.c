@@ -47,6 +47,8 @@ static void fill_entry(VersionEntry *entry, const Json *obj) {
     description = json_get_string(obj, "description", L"");
     jar = json_get_string(obj, "jar", L"");
     jsonUrl = json_get_string(obj, "json", L"");
+    copy_w(entry->type, 32, type ? type : L"Release");
+    copy_w(entry->date, 32, date ? date : L"");
     if (date && date[0]) {
         wsprintfW(entry->title, L"Novoline %s #%s", type, date);
     } else {
@@ -60,7 +62,7 @@ static void fill_entry(VersionEntry *entry, const Json *obj) {
 
 static int fetch_url(char **outData, DWORD *outLength, WCHAR *error, int errorCap) {
     static const WCHAR host[] = L"github.com";
-    static const WCHAR path[] = L"/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions.rat";
+    static const WCHAR path[] = L"/M1CK3Y0908/novoline-rat-launcher/raw/refs/heads/main/versions.rat";
     HINTERNET session = 0, connect = 0, request = 0;
     DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
     DWORD status = 0, statusSize = sizeof(status);
