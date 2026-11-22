@@ -1491,7 +1491,7 @@ static void layout_controls(void) {
     }
     if (g_descView) {
         int descX = (int)(l.mainX * g_scale + 0.5f);
-        int descY = (int)(40 * g_scale + 0.5f);
+        int descY = (int)(30 * g_scale + 0.5f);
         int descW = (int)(l.mainW * g_scale + 0.5f);
         int descH = (int)((l.launchBtn.y - 20.0f) * g_scale + 0.5f) - descY;
         if (descH < 40) descH = 40;
