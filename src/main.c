@@ -1704,12 +1704,19 @@ static void draw_account_shapes(GpGraphics *g, const Layout *l) {
     panel(g, RGB(31, 34, 40), RGB_BORDER, l->card.x + 8, 64.0f, listW, listH, 2.0f, 1);
 }
 
+static void draw_page_dividers(GpGraphics *g, const Layout *l) {
+    fill_rect(g, RGB_SEP, l->mainX, 56.0f, l->mainW, 1.0f);
+    fill_rect(g, RGB_SEP, l->launchBtn.x, l->launchBtn.y - 20.0f,
+              l->launchBtn.w, 1.0f);
+}
+
 static void draw_shapes(GpGraphics *g, const Layout *l) {
     fill_rect(g, RGB_BG, 0, 0, l->W, l->H);
     draw_sidebar(g, l);
     if (g_page == 0) draw_release_shapes(g, l);
     else if (g_page == 1) draw_settings_shapes(g, l);
     else draw_account_shapes(g, l);
+    draw_page_dividers(g, l);
     draw_launch_bar(g, l);
 }
 
@@ -2148,21 +2155,6 @@ static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                 InvalidateRect(hwnd, 0, FALSE);
             }
             return 0;
-        case WM_SETCURSOR:
-            if (LOWORD(lp) == HTCLIENT) {
-                POINT pt;
-                GetCursorPos(&pt);
-                ScreenToClient(hwnd, &pt);
-                description_refresh_metrics(hwnd);
-                if (g_descNeedV && PtInRect(&g_descMetrics.vThumb, pt))
-                    SetCursor(LoadCursorW(0, IDC_SIZENS));
-                else if (g_descNeedH && PtInRect(&g_descMetrics.hThumb, pt))
-                    SetCursor(LoadCursorW(0, IDC_SIZEWE));
-                else
-                    SetCursor(LoadCursorW(0, IDC_ARROW));
-                return TRUE;
-            }
-            break;
         case WM_KEYDOWN: {
             int code = 0;
             switch (wp) {
@@ -2370,18 +2362,6 @@ static LRESULT CALLBACK version_scroll_proc(HWND hwnd, UINT msg, WPARAM wp, LPAR
             version_scroll_set_top(g_verMetrics.top - lines * 3);
             return 0;
         }
-        case WM_SETCURSOR:
-            if (LOWORD(lp) == HTCLIENT) {
-                POINT pt;
-                GetCursorPos(&pt);
-                ScreenToClient(hwnd, &pt);
-                if (g_verMetrics.need && PtInRect(&g_verMetrics.thumb, pt))
-                    SetCursor(LoadCursorW(0, IDC_SIZENS));
-                else
-                    SetCursor(LoadCursorW(0, IDC_ARROW));
-                return TRUE;
-            }
-            break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
