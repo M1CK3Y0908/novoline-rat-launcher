@@ -181,15 +181,15 @@ static int is_windows_11(void) {
 }
 
 static int system_panel_radius(void) {
-    return is_windows_11() ? 10 : 0;
+    return is_windows_11() ? 5 : 0;
 }
 
 static int system_button_radius(void) {
-    return is_windows_11() ? 6 : 0;
+    return is_windows_11() ? 3 : 0;
 }
 
 static int system_tab_radius(void) {
-    return is_windows_11() ? 6 : 0;
+    return is_windows_11() ? 3 : 0;
 }
 
 static void apply_control_region(HWND hwnd, int radius) {
