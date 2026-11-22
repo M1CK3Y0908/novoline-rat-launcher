@@ -1342,7 +1342,8 @@ static void layout_controls(void) {
     w = (int)(l.items[0].w * g_scale + 0.5f);
     h = (int)SendMessageW(g_list, LB_GETITEMHEIGHT, 0, 0);
     if (h < 1) h = (int)(22 * g_scale + 0.5f);
-    h = h * 4 + 2;
+    h = (int)((l.settingsBtn.y - 10.0f) * g_scale + 0.5f) - y;
+    if (h < (int)(22 * g_scale + 0.5f) * 3) h = (int)(22 * g_scale + 0.5f) * 3;
     {
         int barW = (int)(6 * g_scale + 0.5f);
         int gap = (int)(4 * g_scale + 0.5f);
