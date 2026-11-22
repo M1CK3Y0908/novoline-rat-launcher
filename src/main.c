@@ -182,6 +182,24 @@ typedef struct DescMetrics {
 } DescMetrics;
 static DescMetrics g_descMetrics;
 #define DESC_CLASS L"NovolineDescriptionView"
+static HWND g_verScroll;
+#define VER_SCROLL_CLASS L"NovolineVersionScroll"
+typedef struct VerMetrics {
+    int need;
+    int viewH;
+    int thick, gap;
+    int trackTop, trackHeight;
+    int count, visible, top, maxTop;
+    RECT thumb;
+} VerMetrics;
+static VerMetrics g_verMetrics;
+static int g_verHover = 0;
+static int g_verDrag = 0;
+static int g_verDragOffset = 0;
+static int g_verTracking = 0;
+
+static LRESULT CALLBACK version_scroll_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+static void version_scroll_sync(void);
 
 static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 static void description_set_text(const WCHAR *text);
@@ -907,6 +925,7 @@ static int is_owner_button(HWND hwnd) {
 }
 
 static void update_hover_states(void) {
+    version_scroll_sync();
     POINT pt;
     HWND target;
     HWND old;
@@ -968,6 +987,8 @@ static void populate_version_list(void) {
         ShowWindow(g_list, SW_HIDE);
     }
     InvalidateRect(g_list, 0, FALSE);
+    ShowScrollBar(g_list, SB_VERT, FALSE);
+    version_scroll_sync();
     if (g_descView)
         description_set_text(g_versions.count > 0 ? g_versions.items[g_selected].description : L"");
 }
@@ -982,6 +1003,10 @@ static void create_controls(HWND hwnd) {
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
                                  LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                              0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, 0);
+    if (g_list) ShowScrollBar(g_list, SB_VERT, FALSE);
+    g_verScroll = CreateWindowExW(0, VER_SCROLL_CLASS, L"",
+                                  WS_CHILD | WS_CLIPSIBLINGS,
+                                  0, 0, 0, 0, hwnd, 0, inst, 0);
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS, inst, 0);
@@ -1318,7 +1343,20 @@ static void layout_controls(void) {
     h = (int)SendMessageW(g_list, LB_GETITEMHEIGHT, 0, 0);
     if (h < 1) h = (int)(22 * g_scale + 0.5f);
     h = h * 4 + 2;
-    SetWindowPos(g_list, 0, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    {
+        int barW = (int)(6 * g_scale + 0.5f);
+        int gap = (int)(4 * g_scale + 0.5f);
+        int listW;
+        if (barW < 4) barW = 4;
+        if (gap < 2) gap = 2;
+        listW = w - barW - gap;
+        SetWindowPos(g_list, 0, x, y, listW, h, SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowScrollBar(g_list, SB_VERT, FALSE);
+        if (g_verScroll)
+            SetWindowPos(g_verScroll, 0, x + listW + gap, y, barW, h,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    version_scroll_sync();
     SetWindowPos(g_settingsBtn, 0,
                  (int)(l.settingsBtn.x * g_scale + 0.5f), (int)(l.settingsBtn.y * g_scale + 0.5f),
                  (int)(l.settingsBtn.w * g_scale + 0.5f), (int)(l.settingsBtn.h * g_scale + 0.5f),
@@ -1871,22 +1909,19 @@ static void description_scroll(HWND hwnd, int bar, int code) {
     }
 }
 
-static void description_draw_thumb(HDC dc, const RECT *r, int pressed, int hovered) {
-    HBRUSH brush;
-    HGDIOBJ oldBrush, oldPen;
-    COLORREF color = pressed ? RGB(142, 132, 232) :
-                     (hovered ? RGB(122, 128, 144) : RGB(84, 89, 102));
-    int radius;
+static void draw_scroll_thumb(HDC dc, const RECT *r, int pressed, int hovered) {
+    GpGraphics *g = 0;
+    COLORREF color = pressed ? RGB(198, 202, 212) :
+                     (hovered ? RGB(158, 163, 174) : RGB(118, 122, 132));
+    float radius = 3.0f;
     if (r->right <= r->left || r->bottom <= r->top) return;
-    radius = r->right - r->left;
-    if (r->bottom - r->top < radius) radius = r->bottom - r->top;
-    brush = CreateSolidBrush(color);
-    oldBrush = SelectObject(dc, brush);
-    oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-    RoundRect(dc, r->left, r->top, r->right, r->bottom, radius, radius);
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(brush);
+    if (GdipCreateFromHDC(dc, &g) != 0) return;
+    GdipSetSmoothingMode(g, GpSmoothingModeAntiAlias);
+    panel(g, color, color,
+          r->left / g_scale, r->top / g_scale,
+          (r->right - r->left) / g_scale, (r->bottom - r->top) / g_scale,
+          radius, 0);
+    GdipDeleteGraphics(g);
 }
 
 static void description_paint(HWND hwnd, HDC target) {
@@ -1953,9 +1988,9 @@ static void description_paint(HWND hwnd, HDC target) {
     SelectObject(mem, oldFont);
     description_refresh_metrics(hwnd);
     if (g_descNeedV)
-        description_draw_thumb(mem, &g_descMetrics.vThumb, g_descDragV, g_descHoverV);
+        draw_scroll_thumb(mem, &g_descMetrics.vThumb, g_descDragV, g_descHoverV);
     if (g_descNeedH)
-        description_draw_thumb(mem, &g_descMetrics.hThumb, g_descDragH, g_descHoverH);
+        draw_scroll_thumb(mem, &g_descMetrics.hThumb, g_descDragH, g_descHoverH);
     BitBlt(target, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
     SelectObject(mem, oldbmp);
     DeleteObject(bmp);
@@ -2144,6 +2179,209 @@ static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             description_scroll(hwnd, SB_VERT, code);
             return 0;
         }
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void version_scroll_set_top(int top) {
+    int count, visible;
+    if (!g_list) return;
+    count = (int)SendMessageW(g_list, LB_GETCOUNT, 0, 0);
+    visible = g_verMetrics.visible > 0 ? g_verMetrics.visible : 1;
+    if (top < 0) top = 0;
+    if (top > count - visible) top = count - visible;
+    if (top < 0) top = 0;
+    SendMessageW(g_list, LB_SETTOPINDEX, (WPARAM)top, 0);
+    version_scroll_sync();
+}
+
+static void version_scroll_sync(void) {
+    RECT rc;
+    int itemH, count, top, visible, maxTop, minThumb;
+    VerMetrics *m = &g_verMetrics;
+    VerMetrics old;
+    int wasVisible;
+    if (!g_verScroll || !g_list) return;
+    old = *m;
+    wasVisible = IsWindowVisible(g_verScroll);
+    GetClientRect(g_verScroll, &rc);
+    itemH = (int)SendMessageW(g_list, LB_GETITEMHEIGHT, 0, 0);
+    if (itemH < 1) itemH = (int)(22 * g_scale + 0.5f);
+    count = (int)SendMessageW(g_list, LB_GETCOUNT, 0, 0);
+    top = (int)SendMessageW(g_list, LB_GETTOPINDEX, 0, 0);
+    visible = rc.bottom > 0 ? rc.bottom / itemH : 1;
+    if (visible < 1) visible = 1;
+    maxTop = count - visible;
+    if (maxTop < 0) maxTop = 0;
+    ZeroMemory(m, sizeof(*m));
+    m->viewH = rc.bottom;
+    m->count = count;
+    m->visible = visible;
+    m->top = top;
+    m->maxTop = maxTop;
+    m->need = maxTop > 0;
+    if (!m->need) {
+        if (IsWindowVisible(g_verScroll)) ShowWindow(g_verScroll, SW_HIDE);
+        ShowScrollBar(g_list, SB_VERT, FALSE);
+        return;
+    }
+    if (count <= 0) return;
+    ShowScrollBar(g_list, SB_VERT, FALSE);
+    if (!IsWindowVisible(g_verScroll)) ShowWindow(g_verScroll, SW_SHOW);
+    m->thick = rc.right - rc.left;
+    m->gap = (int)(4 * g_scale + 0.5f);
+    if (m->gap < 2) m->gap = 2;
+    m->trackTop = m->gap;
+    m->trackHeight = m->viewH - m->gap * 2;
+    if (m->trackHeight < 1) m->trackHeight = 1;
+    minThumb = (int)(24 * g_scale + 0.5f);
+    if (minThumb > m->trackHeight) minThumb = m->trackHeight;
+    m->thumb.left = 0;
+    m->thumb.right = rc.right;
+    m->thumb.top = m->trackTop;
+    {
+        int height = m->viewH - m->gap * 2;
+        int thumbH = height * visible / count;
+        if (thumbH < minThumb) thumbH = minThumb;
+        if (thumbH > height) thumbH = height;
+        if (m->maxTop > 0 && height > thumbH)
+            m->thumb.top += top * (height - thumbH) / m->maxTop;
+        m->thumb.bottom = m->thumb.top + thumbH;
+    }
+    if (memcmp(&old, m, sizeof(*m)) != 0 || wasVisible != IsWindowVisible(g_verScroll))
+        InvalidateRect(g_verScroll, 0, FALSE);
+}
+
+static void version_scroll_paint(HWND hwnd, HDC target) {
+    RECT rc;
+    HBRUSH brush;
+    GetClientRect(hwnd, &rc);
+    brush = CreateSolidBrush(RGB_BG);
+    FillRect(target, &rc, brush);
+    DeleteObject(brush);
+    if (g_verMetrics.need)
+        draw_scroll_thumb(target, &g_verMetrics.thumb, g_verDrag, g_verHover);
+}
+
+static void version_scroll_mouse_down(HWND hwnd, int x, int y) {
+    POINT pt;
+    VerMetrics *m = &g_verMetrics;
+    (void)x;
+    version_scroll_sync();
+    if (!m->need) return;
+    pt.x = x;
+    pt.y = y;
+    SetFocus(hwnd);
+    if (PtInRect(&m->thumb, pt)) {
+        g_verDrag = 1;
+        g_verDragOffset = y - m->thumb.top;
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else {
+        int thumbH = m->thumb.bottom - m->thumb.top;
+        int movable = m->trackHeight - thumbH;
+        int top = y - thumbH / 2;
+        if (top < m->trackTop) top = m->trackTop;
+        if (top > m->trackTop + movable) top = m->trackTop + movable;
+        if (movable > 0)
+            version_scroll_set_top((top - m->trackTop) * m->maxTop / movable);
+        g_verDrag = 1;
+        g_verDragOffset = thumbH / 2;
+        SetCapture(hwnd);
+    }
+}
+
+static void version_scroll_mouse_move(HWND hwnd, int x, int y) {
+    VerMetrics *m;
+    if (g_verDrag) {
+        int thumbH, movable, top;
+        version_scroll_sync();
+        m = &g_verMetrics;
+        thumbH = m->thumb.bottom - m->thumb.top;
+        movable = m->trackHeight - thumbH;
+        top = y - g_verDragOffset;
+        if (top < m->trackTop) top = m->trackTop;
+        if (top > m->trackTop + movable) top = m->trackTop + movable;
+        if (movable > 0)
+            version_scroll_set_top((top - m->trackTop) * m->maxTop / movable);
+    } else {
+        POINT pt;
+        int hovered;
+        pt.x = x;
+        pt.y = y;
+        hovered = m->need && PtInRect(&m->thumb, pt);
+        if (hovered != g_verHover) {
+            g_verHover = hovered;
+            InvalidateRect(hwnd, 0, FALSE);
+        }
+        if (!g_verTracking) {
+            struct { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } tme;
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = 0x00000002;
+            tme.hwndTrack = hwnd;
+            tme.dwHoverTime = 0;
+            TrackMouseEvent((void *)&tme);
+            g_verTracking = 1;
+        }
+    }
+}
+
+static void version_scroll_mouse_up(HWND hwnd) {
+    if (g_verDrag) {
+        g_verDrag = 0;
+        if (GetCapture() == hwnd) ReleaseCapture();
+        InvalidateRect(hwnd, 0, FALSE);
+    }
+}
+
+static LRESULT CALLBACK version_scroll_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(hwnd, &ps);
+            version_scroll_paint(hwnd, dc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_PRINT:
+        case WM_PRINTCLIENT:
+            version_scroll_paint(hwnd, (HDC)wp);
+            return 0;
+        case WM_MOUSEMOVE:
+            version_scroll_mouse_move(hwnd, (short)LOWORD(lp), (short)HIWORD(lp));
+            return 0;
+        case WM_LBUTTONDOWN:
+            version_scroll_mouse_down(hwnd, (short)LOWORD(lp), (short)HIWORD(lp));
+            return 0;
+        case WM_LBUTTONUP:
+            version_scroll_mouse_up(hwnd);
+            return 0;
+        case 0x02A3:
+            g_verTracking = 0;
+            if (g_verHover) {
+                g_verHover = 0;
+                InvalidateRect(hwnd, 0, FALSE);
+            }
+            return 0;
+        case WM_MOUSEWHEEL: {
+            int lines = (short)HIWORD(wp) / WHEEL_DELTA;
+            version_scroll_set_top(g_verMetrics.top - lines * 3);
+            return 0;
+        }
+        case WM_SETCURSOR:
+            if (LOWORD(lp) == HTCLIENT) {
+                POINT pt;
+                GetCursorPos(&pt);
+                ScreenToClient(hwnd, &pt);
+                if (g_verMetrics.need && PtInRect(&g_verMetrics.thumb, pt))
+                    SetCursor(LoadCursorW(0, IDC_SIZENS));
+                else
+                    SetCursor(LoadCursorW(0, IDC_ARROW));
+                return TRUE;
+            }
+            break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -3358,6 +3596,18 @@ static int register_description_class(HINSTANCE instance) {
     return RegisterClassExW(&wc) != 0;
 }
 
+static int register_version_scroll_class(HINSTANCE instance) {
+    WNDCLASSEXW wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+    wc.lpfnWndProc = version_scroll_proc;
+    wc.hInstance = instance;
+    wc.hCursor = LoadCursorW(0, IDC_ARROW);
+    wc.lpszClassName = VER_SCROLL_CLASS;
+    return RegisterClassExW(&wc) != 0;
+}
+
 int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     WNDCLASSEXW wc;
     MSG msg;
@@ -3367,6 +3617,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     (void)cmdline;
     init_tab_control_support();
     register_description_class(hi);
+    register_version_scroll_class(hi);
     set_dpi_awareness();
     ZeroMemory(&si, sizeof(si));
     si.GdiplusVersion = 1;
