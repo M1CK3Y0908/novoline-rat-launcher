@@ -1715,7 +1715,6 @@ static void draw_account_shapes(GpGraphics *g, const Layout *l) {
 }
 
 static void draw_page_dividers(GpGraphics *g, const Layout *l) {
-    fill_rect(g, RGB_SEP, l->mainX, 56.0f, l->mainW, 1.0f);
     fill_rect(g, RGB_SEP, l->launchBtn.x, l->launchBtn.y - 20.0f,
               l->launchBtn.w, 1.0f);
 }
