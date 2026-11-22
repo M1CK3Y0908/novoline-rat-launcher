@@ -158,38 +158,16 @@ static int g_clientW = 0, g_clientH = 0;
 static int g_page = 0;
 static int g_selected = 0;
 
-static int is_windows_11(void) {
-    static int cached = -1;
-    typedef LONG (WINAPI *PFN_RtlGetVersion)(void *);
-    struct { ULONG size; ULONG major; ULONG minor; ULONG build; WCHAR platform[128]; WCHAR csd[128]; } ver;
-    HMODULE ntdll;
-    PFN_RtlGetVersion fn;
-    if (cached >= 0) return cached;
-    cached = 0;
-    {
-        char force[4];
-        if (GetEnvironmentVariableA("NOVOLINE_FORCE_ROUND", force, sizeof(force)) > 0) cached = 1;
-    }
-    ntdll = LoadLibraryW(L"ntdll.dll");
-    if (!ntdll) return cached;
-    fn = (PFN_RtlGetVersion)GetProcAddress(ntdll, "RtlGetVersion");
-    ZeroMemory(&ver, sizeof(ver));
-    ver.size = sizeof(ver);
-    if (fn && fn(&ver) == 0 && ver.major >= 10 && ver.build >= 22000) cached = 1;
-    FreeLibrary(ntdll);
-    return cached;
-}
-
 static int system_panel_radius(void) {
-    return is_windows_11() ? 5 : 0;
+    return 5;
 }
 
 static int system_button_radius(void) {
-    return is_windows_11() ? 3 : 0;
+    return 3;
 }
 
 static int system_tab_radius(void) {
-    return is_windows_11() ? 3 : 0;
+    return 3;
 }
 
 static void apply_control_region(HWND hwnd, int radius) {

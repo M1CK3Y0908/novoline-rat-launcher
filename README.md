@@ -25,7 +25,7 @@ dist\NovolineLauncher.exe
 - 标题栏颜色：Windows 11 通过 DWM 设置为与客户区背景相同的 `#212429`；Windows 10 不支持逐窗口设置标题栏颜色，保持系统原生强调色。
 - 应用图标提取自 OpenNovoline 主菜单的 `novoline_blue.png`，并按 `#35314D` 的色相整体偏移（保留原图明暗与饱和度），生成 16 / 20 / 24 / 32 / 40 / 48 / 64 / 96 / 128 / 256 多尺寸 ICO；任务栏、标题栏和资源管理器会按实际 DPI 选择对应尺寸。
 - 客户区保留参考图的深色布局；左侧版本列表使用原生 `LISTBOX`，所有按钮使用 Windows 原生 `BUTTON` 控件（Settings / Account / Launch / Browse / Reset / Add Offline / Microsoft Login / Complete / Login / Remove）。
-- 按钮使用原生 `BUTTON` 控件并保留原生点击/焦点行为；由于 Windows 主题按钮不支持自定义深色配色，按钮外观由轻量子类双缓冲绘制。圆角半径按系统版本切换（Win10 直角、Win11 圆角），并用 `WS_EX_COMPOSITED` 减少拖动窗口时的闪烁。
+- 按钮使用原生 `BUTTON` 控件并保留原生点击/焦点行为；由于 Windows 主题按钮不支持自定义深色配色，按钮外观由轻量子类双缓冲绘制。圆角半径固定（卡片/列表 5px，按钮/Tab/输入框 3px），并用 `WS_EX_COMPOSITED` 减少拖动窗口时的闪烁。
 - 所有界面元素以 Windows 100%（96 DPI）标准尺寸为基准：正文 12px、标题 20px、按钮高度 24px、列表项使用原生高度。
 - 窗口支持拖动原生标题栏、双击标题栏最大化、边缘缩放、最小化 / 最大化 / 还原 / 关闭。
 - 高 DPI 感知（PerMonitorV2），根据屏幕工作区自动缩放，避免界面超出屏幕。
@@ -35,7 +35,7 @@ dist\NovolineLauncher.exe
 - 左侧版本条目可切换，右侧标题和发行说明随选择更新。
 - `Settings`：使用原生 `SysTabControl32` 分为 `Paths` / `Game` 两页；标签按文字宽度自动排列并左对齐，鼠标悬停时显示高亮，内容区域位于标签下方。内容由原生 `STATIC` / `EDIT` / `BUTTON` 控件组成。
 - 默认及最小客户区为 `660×440`。左侧 `Account` 打开独立账户页：以列表显示头像、IGN、账户类型和当前活动账户，最多保存 8 个离线/微软账户，支持添加、切换和移除。账户列表的宽高和头像行会随窗口分辨率及 DPI 缩放。微软头像从 Crafatar 下载并缓存；离线头像按 PCL 的 legacy UUID 与 `McSkinSex` 规则选择 Steve/Alex，并使用其默认皮肤头部像素绘制。
-- Windows 10 下卡片、按钮、标签页、账户列表和输入框均为直角；Windows 11（Build 22000+）下统一使用圆角。
+- 卡片、按钮、标签页、账户列表和输入框在 Windows 10 与 Windows 11 下统一使用圆角，不再按系统版本区分。
 - 默认及最小客户区为 `660×440`。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
 - 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待状态只显示文字，不显示加载图标；关闭为红色 #FF3B30 电源符号，按 80% 大小绘制并向上偏移。
@@ -96,7 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 ## 说明
 
-- 窗口默认外框为 600 × 400（96 DPI / Windows 100% 缩放），客户区约 584 × 361；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
+- 窗口默认及最小客户区为 660 × 440（96 DPI / Windows 100% 缩放）；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
 - 按钮仍是原生 `BUTTON` 控件，系统处理输入/焦点/点击；深色背景、边框和文字由子类绘制，`Login` 绿色、`Remove` 红色。账户列表仍为原生 `LISTBOX`。
 - 版本列表使用原生 `LISTBOX` 的 `LBS_OWNERDRAWFIXED` 模式：选中背景与按钮背景同为 `#343843`，鼠标悬停项使用更亮的背景，未选中项保持深色背景。
