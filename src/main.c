@@ -1649,6 +1649,8 @@ static COLORREF blend_rgb(COLORREF a, COLORREF b, float t) {
 static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     COLORREF base = RGB(53, 49, 77);
     COLORREF bright = RGB(142, 132, 232);
+    GpPath *clip;
+    GpSolidFill *baseFill = 0;
     float x, y, w, h;
     float i;
     if (g_page != 0 || g_launchState == LAUNCH_IDLE) return;
@@ -1657,43 +1659,51 @@ static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     w = l->launchBtn.w;
     h = 5.0f;
     if (g_launchState == LAUNCH_RUNNING) {
+        base = RGB(24, 62, 43);
+        bright = RGB(92, 214, 139);
+    } else if (g_launchState == LAUNCH_FAILED) {
+        base = RGB(74, 28, 31);
+        bright = RGB(224, 96, 96);
+    }
+    clip = round_path(x * g_scale, y * g_scale, w * g_scale, h * g_scale,
+                      (h * 0.5f) * g_scale);
+    if (!clip) return;
+    if (GdipCreateSolidFill(gp_color(base, 255), &baseFill) == 0 && baseFill) {
+        GdipFillPath(g, (GpBrush *)baseFill, clip);
+        GdipDeleteBrush((GpBrush *)baseFill);
+    }
+    GdipSetClipPath(g, clip, 0);
+    if (g_launchState == LAUNCH_RUNNING) {
         static const unsigned char breathTab[32] = {
             127,152,176,198,217,233,245,253,254,253,245,233,217,198,176,152,
             127,102,78,56,37,21,9,1,0,1,9,21,37,56,78,102
         };
         int idx = (int)((GetTickCount() / 100) & 31);
         float breath = 0.18f + 0.78f * ((float)breathTab[idx] / 255.0f);
-        base = RGB(24, 62, 43);
-        bright = RGB(92, 214, 139);
         for (i = 0; i < w; i += 1.0f) {
             float t = (w > 1.0f) ? (i / (w - 1.0f)) * 2.0f - 1.0f : 0.0f;
             float edge = 1.0f - (t < 0.0f ? -t : t) * 0.55f;
             float k = breath * edge;
             fill_rect(g, blend_rgb(base, bright, k), x + i, y, 1.0f, h);
         }
-        return;
-    }
-    if (g_launchState == LAUNCH_FAILED) {
-        base = RGB(74, 28, 31);
-        bright = RGB(224, 96, 96);
-    }
-    {
+    } else {
         int barW = (int)w;
         int head = barW > 0 ? (int)(((GetTickCount() * 2) / 9) % (DWORD)barW) : 0;
-        int radius = barW / 3;
-        if (radius < 12) radius = 12;
-        fill_rect(g, base, x, y, w, h);
+        int glowRadius = barW / 3;
+        if (glowRadius < 12) glowRadius = 12;
         for (i = 0; i < w; i += 1.0f) {
             int px = (int)i;
             int dist = px > head ? px - head : head - px;
             float k;
             if (dist > barW / 2) dist = barW - dist;
-            if (dist >= radius) continue;
-            k = 1.0f - (float)dist / (float)radius;
+            if (dist >= glowRadius) continue;
+            k = 1.0f - (float)dist / (float)glowRadius;
             k = k * k * 0.95f;
             fill_rect(g, blend_rgb(base, bright, k), x + i, y, 1.0f, h);
         }
     }
+    GdipResetClip(g);
+    GdipDeletePath(clip);
 }
 static void draw_account_shapes(GpGraphics *g, const Layout *l) {
     float bottom = l->H - 64.0f;

@@ -39,7 +39,7 @@ dist\NovolineLauncher.exe
 - 默认及最小客户区为 `660×440`。
 - 启动按钮直接显示状态：`Launch`、`Waiting for the game`、`Running`、`Shutdown`、`Retry`。
 - 启动按钮带图标：启动/重试为绿色填充、深绿描边的等边三角，图形高度与文字字高一致；等待状态只显示文字，不显示加载图标；关闭为红色 #FF3B30 电源符号，按 80% 大小绘制并向上偏移。
-- 启动按钮上方有 5px 状态色条：平时隐藏；点击启动后显示主题色流光并显示 `Waiting for the game`，检测到游戏窗口后变为绿色呼吸效果和 `Running`，失败为红色流光。
+- 启动按钮上方有 5px 圆角胶囊状态条：平时隐藏；点击启动后显示主题色流光并显示 `Waiting for the game`，检测到游戏窗口后变为绿色呼吸效果和 `Running`，失败为红色流光。
 - 左侧 `Account`：打开账户列表页，可添加离线账户、登录微软账户、切换活动账户或移除账户。
 - `Launch`：
   - 默认游戏目录：`C:\M1CK3Y\novoline.rat`

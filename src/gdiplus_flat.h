@@ -33,6 +33,8 @@ typedef struct GpBitmap GpBitmap;
 GpStatus GdipLoadImageFromFile(const WCHAR *filename, GpImage **image);
 GpStatus GdipDrawImageRectI(GpGraphics *graphics, GpImage *image, INT x, INT y, INT width, INT height);
 GpStatus GdipDisposeImage(GpImage *image);
+GpStatus GdipSetClipPath(GpGraphics *graphics, GpPath *path, INT combineMode);
+GpStatus GdipResetClip(GpGraphics *graphics);
 
 typedef struct GpPointF {
     float X;
