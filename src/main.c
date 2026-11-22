@@ -1491,7 +1491,7 @@ static void layout_controls(void) {
     }
     if (g_descView) {
         int descX = (int)(l.mainX * g_scale + 0.5f);
-        int descY = (int)(58 * g_scale + 0.5f);
+        int descY = (int)(40 * g_scale + 0.5f);
         int descW = (int)(l.mainW * g_scale + 0.5f);
         int descH = (int)((l.launchBtn.y - 20.0f) * g_scale + 0.5f) - descY;
         if (descH < 40) descH = 40;
@@ -1792,7 +1792,7 @@ static void description_measure(HDC dc, int *contentW, int *contentH) {
         }
     }
     SelectObject(dc, oldFont);
-    *contentW = maxW + description_padding() * 2 + 2;
+    *contentW = maxW + description_padding() + 2;
     *contentH = lines * lineH + description_padding() * 2 + 2;
 }
 
@@ -1966,7 +1966,7 @@ static void description_paint(HWND hwnd, HDC target) {
     SetBkMode(mem, TRANSPARENT);
     oldFont = SelectObject(mem, g_font24);
     description_normalize(g_descText, buffer);
-    x = description_padding() - g_descScrollX;
+    x = -g_descScrollX;
     y = description_padding() - g_descScrollY;
     if (!buffer[0]) {
         SetTextColor(mem, RGB(158, 161, 168));
