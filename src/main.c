@@ -161,6 +161,26 @@ static HWND g_descView;
 static WCHAR g_descText[VERSION_DESC_CAP];
 static int g_descScrollX = 0;
 static int g_descScrollY = 0;
+static int g_descHoverV = 0;
+static int g_descHoverH = 0;
+static int g_descDragV = 0;
+static int g_descDragH = 0;
+static int g_descDragOffset = 0;
+static int g_descTracking = 0;
+static RECT g_descVThumb;
+static RECT g_descHThumb;
+static int g_descNeedV = 0;
+static int g_descNeedH = 0;
+typedef struct DescMetrics {
+    int contentW, contentH;
+    int viewW, viewH;
+    int maxX, maxY;
+    int thick, gap;
+    int trackVTop, trackVHeight;
+    int trackHLeft, trackHWidth;
+    RECT vThumb, hThumb;
+} DescMetrics;
+static DescMetrics g_descMetrics;
 #define DESC_CLASS L"NovolineDescriptionView"
 
 static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -1096,8 +1116,7 @@ static void create_controls(HWND hwnd) {
     populate_version_list();
     if (g_list) set_control_theme(g_list);
     g_descView = CreateWindowExW(0, DESC_CLASS, L"",
-                                 WS_CHILD | WS_CLIPSIBLINGS | WS_TABSTOP |
-                                     WS_VSCROLL | WS_HSCROLL,
+                                 WS_CHILD | WS_CLIPSIBLINGS | WS_TABSTOP,
                                  0, 0, 0, 0, hwnd, 0, inst, 0);
     SetTimer(hwnd, 2, 40, 0);
 }
@@ -1723,51 +1742,70 @@ static void description_measure(HDC dc, int *contentW, int *contentH) {
     *contentH = lines * lineH + description_padding() * 2 + 2;
 }
 
-static void description_update_scrollbars(HWND hwnd) {
-    static int updating = 0;
+static void description_refresh_metrics(HWND hwnd) {
     RECT rc;
     HDC dc;
-    int contentW = 0, contentH = 0, lineH = description_line_height();
-    int pageW, pageH, maxX, maxY;
-    SCROLLINFO si;
-    if (updating) return;
-    updating = 1;
+    DescMetrics *m = &g_descMetrics;
+    int minThumb = (int)(24 * g_scale + 0.5f);
+    int vTrackBottom, hTrackRight, thumbVH, thumbHW;
     GetClientRect(hwnd, &rc);
+    ZeroMemory(m, sizeof(*m));
+    m->viewW = rc.right - rc.left;
+    m->viewH = rc.bottom - rc.top;
     dc = GetDC(hwnd);
     if (dc) {
-        description_measure(dc, &contentW, &contentH);
+        description_measure(dc, &m->contentW, &m->contentH);
         ReleaseDC(hwnd, dc);
     }
-    ShowScrollBar(hwnd, SB_VERT, contentH > (rc.bottom - rc.top));
-    ShowScrollBar(hwnd, SB_HORZ, contentW > (rc.right - rc.left));
-    GetClientRect(hwnd, &rc);
-    pageW = rc.right - rc.left;
-    pageH = rc.bottom - rc.top;
-    if (contentH > pageH) ShowScrollBar(hwnd, SB_VERT, TRUE);
-    if (contentW > pageW) ShowScrollBar(hwnd, SB_HORZ, TRUE);
-    GetClientRect(hwnd, &rc);
-    pageW = rc.right - rc.left;
-    pageH = rc.bottom - rc.top;
-    maxX = contentW > pageW ? contentW - pageW : 0;
-    maxY = contentH > pageH ? contentH - pageH : 0;
-    if (g_descScrollX > maxX) g_descScrollX = maxX;
-    if (g_descScrollY > maxY) g_descScrollY = maxY;
+    m->thick = (int)(6 * g_scale + 0.5f);
+    if (m->thick < 4) m->thick = 4;
+    m->gap = (int)(4 * g_scale + 0.5f);
+    if (m->gap < 2) m->gap = 2;
+    if (minThumb < m->thick * 2) minThumb = m->thick * 2;
+    g_descNeedV = m->contentH > m->viewH;
+    g_descNeedH = m->contentW > m->viewW;
+    m->maxX = m->contentW > m->viewW ? m->contentW - m->viewW : 0;
+    m->maxY = m->contentH > m->viewH ? m->contentH - m->viewH : 0;
+    if (g_descScrollX > m->maxX) g_descScrollX = m->maxX;
+    if (g_descScrollY > m->maxY) g_descScrollY = m->maxY;
     if (g_descScrollX < 0) g_descScrollX = 0;
     if (g_descScrollY < 0) g_descScrollY = 0;
-    ZeroMemory(&si, sizeof(si));
-    si.cbSize = sizeof(si);
-    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-    si.nMin = 0;
-    si.nMax = contentW > 0 ? contentW - 1 : 0;
-    si.nPage = pageW;
-    si.nPos = g_descScrollX;
-    SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
-    si.nMax = contentH > 0 ? contentH - 1 : 0;
-    si.nPage = pageH;
-    si.nPos = g_descScrollY;
-    SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
-    (void)lineH;
-    updating = 0;
+
+    vTrackBottom = m->viewH - m->gap - (g_descNeedH ? m->thick + m->gap : 0);
+    m->trackVTop = m->gap;
+    m->trackVHeight = vTrackBottom - m->trackVTop;
+    if (m->trackVHeight < 1) m->trackVHeight = 1;
+    hTrackRight = m->viewW - m->gap - (g_descNeedV ? m->thick + m->gap : 0);
+    m->trackHLeft = m->gap;
+    m->trackHWidth = hTrackRight - m->trackHLeft;
+    if (m->trackHWidth < 1) m->trackHWidth = 1;
+
+    thumbVH = g_descNeedV ? m->trackVHeight * m->viewH / m->contentH : 0;
+    if (thumbVH < minThumb) thumbVH = minThumb;
+    if (thumbVH > m->trackVHeight) thumbVH = m->trackVHeight;
+    thumbHW = g_descNeedH ? m->trackHWidth * m->viewW / m->contentW : 0;
+    if (thumbHW < minThumb) thumbHW = minThumb;
+    if (thumbHW > m->trackHWidth) thumbHW = m->trackHWidth;
+
+    m->vThumb.left = m->viewW - m->gap - m->thick;
+    m->vThumb.right = m->vThumb.left + m->thick;
+    m->vThumb.top = m->trackVTop;
+    m->vThumb.bottom = m->trackVTop + thumbVH;
+    if (m->maxY > 0 && m->trackVHeight > thumbVH)
+        m->vThumb.top += g_descScrollY * (m->trackVHeight - thumbVH) / m->maxY;
+    m->vThumb.bottom = m->vThumb.top + thumbVH;
+
+    m->hThumb.top = m->viewH - m->gap - m->thick;
+    m->hThumb.bottom = m->hThumb.top + m->thick;
+    m->hThumb.left = m->trackHLeft;
+    m->hThumb.right = m->trackHLeft + thumbHW;
+    if (m->maxX > 0 && m->trackHWidth > thumbHW)
+        m->hThumb.left += g_descScrollX * (m->trackHWidth - thumbHW) / m->maxX;
+    m->hThumb.right = m->hThumb.left + thumbHW;
+}
+
+static void description_update_scrollbars(HWND hwnd) {
+    description_refresh_metrics(hwnd);
 }
 
 static void description_set_text(const WCHAR *text) {
@@ -1787,35 +1825,68 @@ static void description_set_text(const WCHAR *text) {
     }
 }
 
-static void description_scroll(HWND hwnd, int bar, int code) {
-    SCROLLINFO si;
-    int pos, maxPos, line = description_line_height();
-    ZeroMemory(&si, sizeof(si));
-    si.cbSize = sizeof(si);
-    si.fMask = SIF_ALL;
-    if (!GetScrollInfo(hwnd, bar, &si)) return;
-    pos = si.nPos;
-    switch (code) {
-        case SB_LINEUP: pos -= line; break;
-        case SB_LINEDOWN: pos += line; break;
-        case SB_PAGEUP: pos -= (int)si.nPage; break;
-        case SB_PAGEDOWN: pos += (int)si.nPage; break;
-        case SB_TOP: pos = si.nMin; break;
-        case SB_BOTTOM: pos = si.nMax; break;
-        case SB_THUMBPOSITION:
-        case SB_THUMBTRACK: pos = si.nTrackPos; break;
-        default: return;
-    }
-    maxPos = si.nMax - (int)si.nPage + 1;
-    if (maxPos < 0) maxPos = 0;
-    if (pos < si.nMin) pos = si.nMin;
-    if (pos > maxPos) pos = maxPos;
-    si.fMask = SIF_POS;
-    si.nPos = pos;
-    SetScrollInfo(hwnd, bar, &si, TRUE);
-    if (bar == SB_VERT) g_descScrollY = pos;
-    else g_descScrollX = pos;
+static void description_scroll_by(HWND hwnd, int dx, int dy) {
+    DescMetrics *m;
+    description_refresh_metrics(hwnd);
+    m = &g_descMetrics;
+    g_descScrollX += dx;
+    g_descScrollY += dy;
+    if (g_descScrollX < 0) g_descScrollX = 0;
+    if (g_descScrollY < 0) g_descScrollY = 0;
+    if (g_descScrollX > m->maxX) g_descScrollX = m->maxX;
+    if (g_descScrollY > m->maxY) g_descScrollY = m->maxY;
+    description_refresh_metrics(hwnd);
     InvalidateRect(hwnd, 0, FALSE);
+}
+
+static void description_scroll(HWND hwnd, int bar, int code) {
+    DescMetrics *m;
+    int line = description_line_height();
+    description_refresh_metrics(hwnd);
+    m = &g_descMetrics;
+    if (bar == SB_VERT) {
+        int pos = g_descScrollY;
+        switch (code) {
+            case SB_LINEUP: pos -= line; break;
+            case SB_LINEDOWN: pos += line; break;
+            case SB_PAGEUP: pos -= m->viewH; break;
+            case SB_PAGEDOWN: pos += m->viewH; break;
+            case SB_TOP: pos = 0; break;
+            case SB_BOTTOM: pos = m->maxY; break;
+            default: return;
+        }
+        description_scroll_by(hwnd, 0, pos - g_descScrollY);
+    } else {
+        int pos = g_descScrollX;
+        switch (code) {
+            case SB_LINEUP: pos -= 24; break;
+            case SB_LINEDOWN: pos += 24; break;
+            case SB_PAGEUP: pos -= m->viewW; break;
+            case SB_PAGEDOWN: pos += m->viewW; break;
+            case SB_TOP: pos = 0; break;
+            case SB_BOTTOM: pos = m->maxX; break;
+            default: return;
+        }
+        description_scroll_by(hwnd, pos - g_descScrollX, 0);
+    }
+}
+
+static void description_draw_thumb(HDC dc, const RECT *r, int pressed, int hovered) {
+    HBRUSH brush;
+    HGDIOBJ oldBrush, oldPen;
+    COLORREF color = pressed ? RGB(142, 132, 232) :
+                     (hovered ? RGB(122, 128, 144) : RGB(84, 89, 102));
+    int radius;
+    if (r->right <= r->left || r->bottom <= r->top) return;
+    radius = r->right - r->left;
+    if (r->bottom - r->top < radius) radius = r->bottom - r->top;
+    brush = CreateSolidBrush(color);
+    oldBrush = SelectObject(dc, brush);
+    oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
+    RoundRect(dc, r->left, r->top, r->right, r->bottom, radius, radius);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(brush);
 }
 
 static void description_paint(HWND hwnd, HDC target) {
@@ -1829,6 +1900,7 @@ static void description_paint(HWND hwnd, HDC target) {
     int x, y, lineH = description_line_height();
     GetClientRect(hwnd, &rc);
     if (rc.right <= rc.left || rc.bottom <= rc.top) return;
+    description_refresh_metrics(hwnd);
     mem = CreateCompatibleDC(target);
     bmp = CreateCompatibleBitmap(target, rc.right, rc.bottom);
     if (!mem || !bmp) {
@@ -1879,10 +1951,124 @@ static void description_paint(HWND hwnd, HDC target) {
         }
     }
     SelectObject(mem, oldFont);
+    description_refresh_metrics(hwnd);
+    if (g_descNeedV)
+        description_draw_thumb(mem, &g_descMetrics.vThumb, g_descDragV, g_descHoverV);
+    if (g_descNeedH)
+        description_draw_thumb(mem, &g_descMetrics.hThumb, g_descDragH, g_descHoverH);
     BitBlt(target, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
     SelectObject(mem, oldbmp);
     DeleteObject(bmp);
     DeleteDC(mem);
+}
+
+static void description_update_hover(HWND hwnd, int x, int y) {
+    POINT pt;
+    int hoverV = 0, hoverH = 0;
+    description_refresh_metrics(hwnd);
+    pt.x = x;
+    pt.y = y;
+    if (g_descNeedV && PtInRect(&g_descMetrics.vThumb, pt)) hoverV = 1;
+    if (g_descNeedH && PtInRect(&g_descMetrics.hThumb, pt)) hoverH = 1;
+    if (hoverV != g_descHoverV || hoverH != g_descHoverH) {
+        g_descHoverV = hoverV;
+        g_descHoverH = hoverH;
+        InvalidateRect(hwnd, 0, FALSE);
+    }
+    if (!g_descTracking) {
+        struct { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } tme;
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = 0x00000002;
+        tme.hwndTrack = hwnd;
+        tme.dwHoverTime = 0;
+        TrackMouseEvent((void *)&tme);
+        g_descTracking = 1;
+    }
+}
+
+static void description_mouse_down(HWND hwnd, int x, int y) {
+    POINT pt;
+    DescMetrics *m;
+    pt.x = x;
+    pt.y = y;
+    description_refresh_metrics(hwnd);
+    m = &g_descMetrics;
+    SetFocus(hwnd);
+    if (g_descNeedV && PtInRect(&m->vThumb, pt)) {
+        g_descDragV = 1;
+        g_descDragOffset = y - m->vThumb.top;
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else if (g_descNeedH && PtInRect(&m->hThumb, pt)) {
+        g_descDragH = 1;
+        g_descDragOffset = x - m->hThumb.left;
+        SetCapture(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else if (g_descNeedV && x >= m->vThumb.left && x <= m->vThumb.right) {
+        int thumbH = m->vThumb.bottom - m->vThumb.top;
+        int movable = m->trackVHeight - thumbH;
+        int top = y - thumbH / 2;
+        if (top < m->trackVTop) top = m->trackVTop;
+        if (top > m->trackVTop + movable) top = m->trackVTop + movable;
+        g_descScrollY = movable > 0 ? (top - m->trackVTop) * m->maxY / movable : 0;
+        g_descDragV = 1;
+        g_descDragOffset = thumbH / 2;
+        SetCapture(hwnd);
+        description_refresh_metrics(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else if (g_descNeedH && y >= m->hThumb.top && y <= m->hThumb.bottom) {
+        int thumbW = m->hThumb.right - m->hThumb.left;
+        int movable = m->trackHWidth - thumbW;
+        int left = x - thumbW / 2;
+        if (left < m->trackHLeft) left = m->trackHLeft;
+        if (left > m->trackHLeft + movable) left = m->trackHLeft + movable;
+        g_descScrollX = movable > 0 ? (left - m->trackHLeft) * m->maxX / movable : 0;
+        g_descDragH = 1;
+        g_descDragOffset = thumbW / 2;
+        SetCapture(hwnd);
+        description_refresh_metrics(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    }
+}
+
+static void description_mouse_move(HWND hwnd, int x, int y) {
+    DescMetrics *m;
+    if (g_descDragV) {
+        int thumbH, movable, top;
+        description_refresh_metrics(hwnd);
+        m = &g_descMetrics;
+        thumbH = m->vThumb.bottom - m->vThumb.top;
+        movable = m->trackVHeight - thumbH;
+        top = y - g_descDragOffset;
+        if (top < m->trackVTop) top = m->trackVTop;
+        if (top > m->trackVTop + movable) top = m->trackVTop + movable;
+        g_descScrollY = movable > 0 ? (top - m->trackVTop) * m->maxY / movable : 0;
+        description_refresh_metrics(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else if (g_descDragH) {
+        int thumbW, movable, left;
+        description_refresh_metrics(hwnd);
+        m = &g_descMetrics;
+        thumbW = m->hThumb.right - m->hThumb.left;
+        movable = m->trackHWidth - thumbW;
+        left = x - g_descDragOffset;
+        if (left < m->trackHLeft) left = m->trackHLeft;
+        if (left > m->trackHLeft + movable) left = m->trackHLeft + movable;
+        g_descScrollX = movable > 0 ? (left - m->trackHLeft) * m->maxX / movable : 0;
+        description_refresh_metrics(hwnd);
+        InvalidateRect(hwnd, 0, FALSE);
+    } else {
+        description_update_hover(hwnd, x, y);
+    }
+}
+
+static void description_mouse_up(HWND hwnd) {
+    if (g_descDragV || g_descDragH) {
+        g_descDragV = 0;
+        g_descDragH = 0;
+        if (GetCapture() == hwnd) ReleaseCapture();
+        InvalidateRect(hwnd, 0, FALSE);
+    }
 }
 
 static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -1904,35 +2090,44 @@ static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             description_update_scrollbars(hwnd);
             InvalidateRect(hwnd, 0, FALSE);
             return 0;
-        case WM_VSCROLL:
-            description_scroll(hwnd, SB_VERT, LOWORD(wp));
-            return 0;
-        case WM_HSCROLL:
-            description_scroll(hwnd, SB_HORZ, LOWORD(wp));
-            return 0;
         case WM_MOUSEWHEEL: {
-            SCROLLINFO si;
             int delta = (short)HIWORD(wp);
             int lines = delta / WHEEL_DELTA;
-            int pos;
-            ZeroMemory(&si, sizeof(si));
-            si.cbSize = sizeof(si);
-            si.fMask = SIF_ALL;
-            if (GetScrollInfo(hwnd, SB_VERT, &si)) {
-                pos = si.nPos - lines * description_line_height() * 3;
-                if (pos < si.nMin) pos = si.nMin;
-                if (pos > si.nMax - (int)si.nPage + 1) pos = si.nMax - (int)si.nPage + 1;
-                si.fMask = SIF_POS;
-                si.nPos = pos;
-                SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
-                g_descScrollY = pos;
+            description_scroll_by(hwnd, 0, -lines * description_line_height() * 3);
+            return 0;
+        }
+        case WM_MOUSEMOVE:
+            description_mouse_move(hwnd, (short)LOWORD(lp), (short)HIWORD(lp));
+            return 0;
+        case WM_LBUTTONDOWN:
+            description_mouse_down(hwnd, (short)LOWORD(lp), (short)HIWORD(lp));
+            return 0;
+        case WM_LBUTTONUP:
+            description_mouse_up(hwnd);
+            return 0;
+        case 0x02A3: /* WM_MOUSELEAVE */
+            g_descTracking = 0;
+            if (g_descHoverV || g_descHoverH) {
+                g_descHoverV = 0;
+                g_descHoverH = 0;
                 InvalidateRect(hwnd, 0, FALSE);
             }
             return 0;
-        }
-        case WM_LBUTTONDOWN:
-            SetFocus(hwnd);
-            return 0;
+        case WM_SETCURSOR:
+            if (LOWORD(lp) == HTCLIENT) {
+                POINT pt;
+                GetCursorPos(&pt);
+                ScreenToClient(hwnd, &pt);
+                description_refresh_metrics(hwnd);
+                if (g_descNeedV && PtInRect(&g_descMetrics.vThumb, pt))
+                    SetCursor(LoadCursorW(0, IDC_SIZENS));
+                else if (g_descNeedH && PtInRect(&g_descMetrics.hThumb, pt))
+                    SetCursor(LoadCursorW(0, IDC_SIZEWE));
+                else
+                    SetCursor(LoadCursorW(0, IDC_ARROW));
+                return TRUE;
+            }
+            break;
         case WM_KEYDOWN: {
             int code = 0;
             switch (wp) {
