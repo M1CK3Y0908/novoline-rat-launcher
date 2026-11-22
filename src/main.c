@@ -157,6 +157,15 @@ static float g_scale = 1.0f;
 static int g_clientW = 0, g_clientH = 0;
 static int g_page = 0;
 static int g_selected = 0;
+static HWND g_descView;
+static WCHAR g_descText[VERSION_DESC_CAP];
+static int g_descScrollX = 0;
+static int g_descScrollY = 0;
+#define DESC_CLASS L"NovolineDescriptionView"
+
+static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+static void description_set_text(const WCHAR *text);
+static void description_update_scrollbars(HWND hwnd);
 
 static int system_panel_radius(void) {
     return 5;
@@ -939,6 +948,8 @@ static void populate_version_list(void) {
         ShowWindow(g_list, SW_HIDE);
     }
     InvalidateRect(g_list, 0, FALSE);
+    if (g_descView)
+        description_set_text(g_versions.count > 0 ? g_versions.items[g_selected].description : L"");
 }
 
 static LRESULT CALLBACK native_button_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -1084,6 +1095,10 @@ static void create_controls(HWND hwnd) {
     }
     populate_version_list();
     if (g_list) set_control_theme(g_list);
+    g_descView = CreateWindowExW(0, DESC_CLASS, L"",
+                                 WS_CHILD | WS_CLIPSIBLINGS | WS_TABSTOP |
+                                     WS_VSCROLL | WS_HSCROLL,
+                                 0, 0, 0, 0, hwnd, 0, inst, 0);
     SetTimer(hwnd, 2, 40, 0);
 }
 
@@ -1417,6 +1432,15 @@ static void layout_controls(void) {
         apply_control_region(g_msCodeEdit, editRadius);
         apply_control_region(g_accountList, listRadius);
     }
+    if (g_descView) {
+        int descX = (int)(l.mainX * g_scale + 0.5f);
+        int descY = (int)(58 * g_scale + 0.5f);
+        int descW = (int)(l.mainW * g_scale + 0.5f);
+        int descH = (int)((l.launchBtn.y - 20.0f) * g_scale + 0.5f) - descY;
+        if (descH < 40) descH = 40;
+        SetWindowPos(g_descView, 0, descX, descY, descW, descH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 }
 
 static void invalidate_settings_card(HWND hwnd) {
@@ -1431,6 +1455,16 @@ static void invalidate_settings_card(HWND hwnd) {
 }
 
 static void sync_page_controls(void) {
+    if (g_descView) {
+        int showDesc = g_page == 0 && g_versions.count > 0;
+        ShowWindow(g_descView, showDesc ? SW_SHOW : SW_HIDE);
+        if (showDesc) {
+            if (g_selected >= 0 && g_selected < g_versions.count)
+                description_set_text(g_versions.items[g_selected].description);
+            description_update_scrollbars(g_descView);
+            InvalidateRect(g_descView, 0, FALSE);
+        }
+    }
     if (g_launchBtn) {
         const WCHAR *label = L"Launch";
         if (g_page == 1 || g_page == 2) label = L"Done";
@@ -1622,74 +1656,301 @@ static void draw_shapes(GpGraphics *g, const Layout *l) {
     draw_launch_bar(g, l);
 }
 
-static void draw_description(HDC dc, const Layout *l, const WCHAR *description) {
+static void description_normalize(const WCHAR *description, WCHAR *buffer) {
+    WCHAR *src;
+    WCHAR *dst = buffer;
+    scopy(buffer, description ? description : L"", VERSION_DESC_CAP);
+    src = buffer;
+    while (*src) {
+        if (src[0] == L'\\' && (src[1] == L'n' || src[1] == L'N')) {
+            *dst++ = L'\n';
+            src += 2;
+        } else if (src[0] == L'\\' && (src[1] == L'r' || src[1] == L'R')) {
+            src += 2;
+        } else if (src[0] == L'\r') {
+            src++;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = 0;
+}
+
+static int description_line_height(void) {
+    int height = (int)(18 * g_scale + 0.5f);
+    return height > 1 ? height : 1;
+}
+
+static int description_padding(void) {
+    int pad = (int)(6 * g_scale + 0.5f);
+    return pad > 1 ? pad : 1;
+}
+
+static void description_measure(HDC dc, int *contentW, int *contentH) {
     WCHAR buffer[VERSION_DESC_CAP];
     WCHAR *p;
-    int y = 30;
-    int lines = 0;
-    if (!description || !description[0]) {
-        draw_text(dc, L"No description available.", l->mainX, y, l->mainW, 18, g_font24,
-                  RGB(158, 161, 168), DT_LEFT | DT_TOP | DT_SINGLELINE);
+    int maxW = 0, lines = 0;
+    int lineH = description_line_height();
+    HGDIOBJ oldFont;
+    description_normalize(g_descText, buffer);
+    p = buffer;
+    oldFont = SelectObject(dc, g_font24);
+    if (!buffer[0]) {
+        SIZE sz;
+        GetTextExtentPoint32W(dc, L"No description available.", 24, &sz);
+        maxW = sz.cx;
+        lines = 1;
+    } else {
+        while (*p) {
+            WCHAR *end = wcschr(p, L'\n');
+            WCHAR *line = p;
+            int n;
+            SIZE sz;
+            if (end) *end = 0;
+            n = (int)wcslen(line);
+            while (n > 0 && (line[n - 1] == L'\r' || line[n - 1] == L' ')) line[--n] = 0;
+            if (n > 0) {
+                GetTextExtentPoint32W(dc, line, n, &sz);
+                if (sz.cx > maxW) maxW = sz.cx;
+            }
+            lines++;
+            if (!end) break;
+            p = end + 1;
+        }
+    }
+    SelectObject(dc, oldFont);
+    *contentW = maxW + description_padding() * 2 + 2;
+    *contentH = lines * lineH + description_padding() * 2 + 2;
+}
+
+static void description_update_scrollbars(HWND hwnd) {
+    static int updating = 0;
+    RECT rc;
+    HDC dc;
+    int contentW = 0, contentH = 0, lineH = description_line_height();
+    int pageW, pageH, maxX, maxY;
+    SCROLLINFO si;
+    if (updating) return;
+    updating = 1;
+    GetClientRect(hwnd, &rc);
+    dc = GetDC(hwnd);
+    if (dc) {
+        description_measure(dc, &contentW, &contentH);
+        ReleaseDC(hwnd, dc);
+    }
+    ShowScrollBar(hwnd, SB_VERT, contentH > (rc.bottom - rc.top));
+    ShowScrollBar(hwnd, SB_HORZ, contentW > (rc.right - rc.left));
+    GetClientRect(hwnd, &rc);
+    pageW = rc.right - rc.left;
+    pageH = rc.bottom - rc.top;
+    if (contentH > pageH) ShowScrollBar(hwnd, SB_VERT, TRUE);
+    if (contentW > pageW) ShowScrollBar(hwnd, SB_HORZ, TRUE);
+    GetClientRect(hwnd, &rc);
+    pageW = rc.right - rc.left;
+    pageH = rc.bottom - rc.top;
+    maxX = contentW > pageW ? contentW - pageW : 0;
+    maxY = contentH > pageH ? contentH - pageH : 0;
+    if (g_descScrollX > maxX) g_descScrollX = maxX;
+    if (g_descScrollY > maxY) g_descScrollY = maxY;
+    if (g_descScrollX < 0) g_descScrollX = 0;
+    if (g_descScrollY < 0) g_descScrollY = 0;
+    ZeroMemory(&si, sizeof(si));
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin = 0;
+    si.nMax = contentW > 0 ? contentW - 1 : 0;
+    si.nPage = pageW;
+    si.nPos = g_descScrollX;
+    SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
+    si.nMax = contentH > 0 ? contentH - 1 : 0;
+    si.nPage = pageH;
+    si.nPos = g_descScrollY;
+    SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+    (void)lineH;
+    updating = 0;
+}
+
+static void description_set_text(const WCHAR *text) {
+    if (text && !wcscmp(g_descText, text)) {
+        if (g_descView) {
+            description_update_scrollbars(g_descView);
+            InvalidateRect(g_descView, 0, FALSE);
+        }
         return;
     }
-    scopy(buffer, description, VERSION_DESC_CAP);
-    {
-        WCHAR *src = buffer;
-        WCHAR *dst = buffer;
-        while (*src) {
-            if (src[0] == L'\\' && (src[1] == L'n' || src[1] == L'N')) {
-                *dst++ = L'\n';
-                src += 2;
-            } else if (src[0] == L'\\' && (src[1] == L'r' || src[1] == L'R')) {
-                src += 2;
-            } else if (src[0] == L'\r') {
-                src++;
-            } else {
-                *dst++ = *src++;
-            }
-        }
-        *dst = 0;
+    scopy(g_descText, text ? text : L"", VERSION_DESC_CAP);
+    g_descScrollX = 0;
+    g_descScrollY = 0;
+    if (g_descView) {
+        description_update_scrollbars(g_descView);
+        InvalidateRect(g_descView, 0, FALSE);
     }
-    p = buffer;
-    while (*p && y < l->H - 44 && lines < 16) {
-        WCHAR *end = wcschr(p, L'\n');
-        WCHAR *line = p;
-        int n;
-        if (end) *end = 0;
-        n = (int)wcslen(line);
-        while (n > 0 && (line[n - 1] == L'\r' || line[n - 1] == L' ')) line[--n] = 0;
-        if (line[0]) {
-            if (line[0] == L'[' && line[1] && line[2] == L']') {
-                WCHAR prefix[4];
-                WCHAR *body = line + 3;
-                SIZE sz;
-                HGDIOBJ oldFont;
-                float bodyX;
-                prefix[0] = line[0];
-                prefix[1] = line[1];
-                prefix[2] = line[2];
-                prefix[3] = 0;
-                while (*body == L' ') body++;
-                oldFont = SelectObject(dc, g_font24);
-                GetTextExtentPoint32W(dc, prefix, 3, &sz);
-                SelectObject(dc, oldFont);
-                bodyX = l->mainX + (float)sz.cx / g_scale;
-                draw_text(dc, prefix, l->mainX, y, 18, 18, g_font24, RGB(150, 153, 161),
-                          DT_LEFT | DT_TOP | DT_SINGLELINE);
-                if (*body) {
-                    draw_text(dc, body, bodyX, y, l->mainW - (bodyX - l->mainX), 18, g_font24,
-                              RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+static void description_scroll(HWND hwnd, int bar, int code) {
+    SCROLLINFO si;
+    int pos, maxPos, line = description_line_height();
+    ZeroMemory(&si, sizeof(si));
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_ALL;
+    if (!GetScrollInfo(hwnd, bar, &si)) return;
+    pos = si.nPos;
+    switch (code) {
+        case SB_LINEUP: pos -= line; break;
+        case SB_LINEDOWN: pos += line; break;
+        case SB_PAGEUP: pos -= (int)si.nPage; break;
+        case SB_PAGEDOWN: pos += (int)si.nPage; break;
+        case SB_TOP: pos = si.nMin; break;
+        case SB_BOTTOM: pos = si.nMax; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: pos = si.nTrackPos; break;
+        default: return;
+    }
+    maxPos = si.nMax - (int)si.nPage + 1;
+    if (maxPos < 0) maxPos = 0;
+    if (pos < si.nMin) pos = si.nMin;
+    if (pos > maxPos) pos = maxPos;
+    si.fMask = SIF_POS;
+    si.nPos = pos;
+    SetScrollInfo(hwnd, bar, &si, TRUE);
+    if (bar == SB_VERT) g_descScrollY = pos;
+    else g_descScrollX = pos;
+    InvalidateRect(hwnd, 0, FALSE);
+}
+
+static void description_paint(HWND hwnd, HDC target) {
+    WCHAR buffer[VERSION_DESC_CAP];
+    WCHAR *p;
+    RECT rc;
+    HDC mem;
+    HBITMAP bmp, oldbmp;
+    HGDIOBJ oldFont;
+    HBRUSH brush;
+    int x, y, lineH = description_line_height();
+    GetClientRect(hwnd, &rc);
+    if (rc.right <= rc.left || rc.bottom <= rc.top) return;
+    mem = CreateCompatibleDC(target);
+    bmp = CreateCompatibleBitmap(target, rc.right, rc.bottom);
+    if (!mem || !bmp) {
+        if (bmp) DeleteObject(bmp);
+        if (mem) DeleteDC(mem);
+        return;
+    }
+    oldbmp = SelectObject(mem, bmp);
+    brush = CreateSolidBrush(RGB_BG);
+    FillRect(mem, &rc, brush);
+    DeleteObject(brush);
+    SetBkMode(mem, TRANSPARENT);
+    oldFont = SelectObject(mem, g_font24);
+    description_normalize(g_descText, buffer);
+    x = description_padding() - g_descScrollX;
+    y = description_padding() - g_descScrollY;
+    if (!buffer[0]) {
+        SetTextColor(mem, RGB(158, 161, 168));
+        TextOutW(mem, x, y, L"No description available.", 24);
+    } else {
+        p = buffer;
+        while (*p) {
+            WCHAR *end = wcschr(p, L'\n');
+            WCHAR *line = p;
+            int n;
+            if (end) *end = 0;
+            n = (int)wcslen(line);
+            while (n > 0 && (line[n - 1] == L'\r' || line[n - 1] == L' ')) line[--n] = 0;
+            if (n > 0) {
+                if (line[0] == L'[' && line[1] && line[2] == L']') {
+                    WCHAR *body = line + 3;
+                    SIZE sz;
+                    int prefixX = x;
+                    GetTextExtentPoint32W(mem, line, 3, &sz);
+                    SetTextColor(mem, RGB(150, 153, 161));
+                    TextOutW(mem, prefixX, y, line, 3);
+                    while (*body == L' ') body++;
+                    SetTextColor(mem, RGB(196, 198, 204));
+                    if (*body) TextOutW(mem, prefixX + sz.cx, y, body, (int)wcslen(body));
+                } else {
+                    SetTextColor(mem, RGB(196, 198, 204));
+                    TextOutW(mem, x, y, line, n);
                 }
-            } else {
-                draw_text(dc, line, l->mainX, y, l->mainW, 18, g_font24,
-                          RGB(196, 198, 204), DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
             }
-            y += 18;
-            lines++;
+            y += lineH;
+            if (!end) break;
+            p = end + 1;
         }
-        if (!end) break;
-        p = end + 1;
     }
+    SelectObject(mem, oldFont);
+    BitBlt(target, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, oldbmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+}
+
+static LRESULT CALLBACK description_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(hwnd, &ps);
+            description_paint(hwnd, dc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_PRINT:
+        case WM_PRINTCLIENT:
+            description_paint(hwnd, (HDC)wp);
+            return 0;
+        case WM_SIZE:
+            description_update_scrollbars(hwnd);
+            InvalidateRect(hwnd, 0, FALSE);
+            return 0;
+        case WM_VSCROLL:
+            description_scroll(hwnd, SB_VERT, LOWORD(wp));
+            return 0;
+        case WM_HSCROLL:
+            description_scroll(hwnd, SB_HORZ, LOWORD(wp));
+            return 0;
+        case WM_MOUSEWHEEL: {
+            SCROLLINFO si;
+            int delta = (short)HIWORD(wp);
+            int lines = delta / WHEEL_DELTA;
+            int pos;
+            ZeroMemory(&si, sizeof(si));
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_ALL;
+            if (GetScrollInfo(hwnd, SB_VERT, &si)) {
+                pos = si.nPos - lines * description_line_height() * 3;
+                if (pos < si.nMin) pos = si.nMin;
+                if (pos > si.nMax - (int)si.nPage + 1) pos = si.nMax - (int)si.nPage + 1;
+                si.fMask = SIF_POS;
+                si.nPos = pos;
+                SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+                g_descScrollY = pos;
+                InvalidateRect(hwnd, 0, FALSE);
+            }
+            return 0;
+        }
+        case WM_LBUTTONDOWN:
+            SetFocus(hwnd);
+            return 0;
+        case WM_KEYDOWN: {
+            int code = 0;
+            switch (wp) {
+                case VK_UP: code = SB_LINEUP; break;
+                case VK_DOWN: code = SB_LINEDOWN; break;
+                case VK_PRIOR: code = SB_PAGEUP; break;
+                case VK_NEXT: code = SB_PAGEDOWN; break;
+                case VK_HOME: code = SB_TOP; break;
+                case VK_END: code = SB_BOTTOM; break;
+                case VK_LEFT: description_scroll(hwnd, SB_HORZ, SB_LINEUP); return 0;
+                case VK_RIGHT: description_scroll(hwnd, SB_HORZ, SB_LINEDOWN); return 0;
+                default: return 0;
+            }
+            description_scroll(hwnd, SB_VERT, code);
+            return 0;
+        }
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 static void draw_texts(HDC dc, const Layout *l) {
@@ -1719,7 +1980,6 @@ static void draw_texts(HDC dc, const Layout *l) {
             const VersionEntry *entry = &g_versions.items[g_selected];
             draw_text(dc, entry->title, l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
                       DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-            draw_description(dc, l, entry->description);
         }
     } else if (g_page == 1) {
         draw_text(dc, L"Settings", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
@@ -2652,6 +2912,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 int sel = (int)SendMessageW(g_list, LB_GETCURSEL, 0, 0);
                 if (sel >= 0) {
                     g_selected = sel;
+                    if (g_descView) {
+                        ShowWindow(g_descView, g_page == 0 ? SW_SHOW : SW_HIDE);
+                        description_set_text(g_versions.items[sel].description);
+                        description_update_scrollbars(g_descView);
+                        InvalidateRect(g_descView, 0, FALSE);
+                    }
                     if (g_page != 0) {
                         g_page = 0;
                         sync_page_controls();
@@ -2885,6 +3151,18 @@ static int get_window_dpi(HWND hwnd) {
     return 96;
 }
 
+static int register_description_class(HINSTANCE instance) {
+    WNDCLASSEXW wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+    wc.lpfnWndProc = description_proc;
+    wc.hInstance = instance;
+    wc.hCursor = LoadCursorW(0, IDC_ARROW);
+    wc.lpszClassName = DESC_CLASS;
+    return RegisterClassExW(&wc) != 0;
+}
+
 int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     WNDCLASSEXW wc;
     MSG msg;
@@ -2893,6 +3171,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     (void)hp;
     (void)cmdline;
     init_tab_control_support();
+    register_description_class(hi);
     set_dpi_awareness();
     ZeroMemory(&si, sizeof(si));
     si.GdiplusVersion = 1;
