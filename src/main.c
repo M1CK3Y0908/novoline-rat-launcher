@@ -2294,7 +2294,7 @@ static void version_scroll_mouse_down(HWND hwnd, int x, int y) {
 }
 
 static void version_scroll_mouse_move(HWND hwnd, int x, int y) {
-    VerMetrics *m;
+    VerMetrics *m = &g_verMetrics;
     if (g_verDrag) {
         int thumbH, movable, top;
         version_scroll_sync();
@@ -2309,6 +2309,8 @@ static void version_scroll_mouse_move(HWND hwnd, int x, int y) {
     } else {
         POINT pt;
         int hovered;
+        version_scroll_sync();
+        m = &g_verMetrics;
         pt.x = x;
         pt.y = y;
         hovered = m->need && PtInRect(&m->thumb, pt);
