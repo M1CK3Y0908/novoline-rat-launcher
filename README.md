@@ -1,4 +1,4 @@
-# Novoline Launcher
+# Novoline.Rat Launcher
 
 一个纯 Win32 / GDI+ 编写的 Minecraft 启动器，界面按参考图重绘。无 Electron、无 .NET、无 Qt、无 Python、无 VC++ 运行库，单个 `exe` 即可运行。
 
@@ -98,10 +98,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 - 窗口默认及最小客户区为 660 × 440（96 DPI / Windows 100% 缩放）；字体、按钮、列表等均采用标准 100% 尺寸，系统 DPI 缩放时按系统比例放大。
 - 字体使用 Windows 自带的 `Segoe UI`，不携带字体文件。
-- 按钮仍是原生 `BUTTON` 控件，系统处理输入/焦点/点击；深色背景、边框和文字由子类绘制，`Login` 绿色、`Remove` 红色。账户列表仍为原生 `LISTBOX`。
+- 按钮仍是原生 `BUTTON` 控件，系统处理输入/焦点/点击；深色背景、边框和文字由子类绘制。
 - 版本列表使用原生 `LISTBOX` 的 `LBS_OWNERDRAWFIXED` 模式：选中背景与按钮背景同为 `#343843`，鼠标悬停项使用更亮的背景，未选中项保持深色背景。
 - 窗口标题和标题栏图标由 Win32 原生绘制。
-- 当前版本采用离线档案启动；没有实现 Microsoft 账号登录。首次启动默认用户名为 `Player`。
+- 已完全移除账号管理与登录模块，所有启动流程强制使用固定用户名 `novoline_rat`（UUID: `edff26ce522f38869eb23aa8eb9cc036`）。
 - 对现代 Forge / NeoForge 等需要额外 JVM 参数的整合包，启动参数适配可能不完整；原版 / Novoline 风格版本可直接使用。
 
 ## 许可证

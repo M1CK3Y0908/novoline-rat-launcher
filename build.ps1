@@ -35,8 +35,8 @@ if ($LASTEXITCODE -ne 0) { throw "TinyCC failed with exit code $LASTEXITCODE" }
     --application-manifest 'assets\app.manifest' `
     --set-file-version '1.0.0.0' `
     --set-product-version '1.0.0.0' `
-    --set-version-string FileDescription 'Novoline Launcher' `
-    --set-version-string ProductName 'Novoline Launcher' `
+    --set-version-string FileDescription 'Novoline.Rat Launcher' `
+    --set-version-string ProductName 'Novoline.Rat Launcher' `
     --set-version-string CompanyName 'Novoline' `
     --set-version-string OriginalFilename 'NovolineLauncher.exe' `
     --set-version-string InternalName 'NovolineLauncher' `

@@ -43,4 +43,30 @@ LPITEMIDLIST WINAPI SHBrowseForFolderW(BROWSEINFOW *);
 BOOL WINAPI SHGetPathFromIDListW(LPCITEMIDLIST, LPWSTR);
 void WINAPI CoTaskMemFree(LPVOID);
 
+#ifndef FO_DELETE
+#define FO_DELETE 0x0003
+#endif
+#ifndef FOF_NOCONFIRMATION
+#define FOF_NOCONFIRMATION 0x0010
+#endif
+#ifndef FOF_SILENT
+#define FOF_SILENT 0x0004
+#endif
+#ifndef FOF_NOERRORUI
+#define FOF_NOERRORUI 0x0400
+#endif
+
+typedef struct _SHFILEOPSTRUCTW {
+    HWND hwnd;
+    UINT wFunc;
+    LPCWSTR pFrom;
+    LPCWSTR pTo;
+    WORD fFlags;
+    BOOL fAnyOperationsAborted;
+    LPVOID hNameMappings;
+    LPCWSTR lpszProgressTitle;
+} SHFILEOPSTRUCTW;
+
+int WINAPI SHFileOperationW(SHFILEOPSTRUCTW *lpFileOp);
+
 #endif

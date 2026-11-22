@@ -25,10 +25,9 @@
 #endif
 
 #define APP_CLASS L"NovolineLauncherWindow"
-#define APP_TITLE L"Novoline Launcher"
+#define APP_TITLE L"Novoline.Rat Launcher"
 #define IDC_LIST       1001
 #define IDC_SETTINGS   1002
-#define IDC_LOGOUT     1003
 #define IDC_LAUNCH     1004
 #define IDC_OPEN       1005
 #define IDC_DETECT     1006
@@ -43,24 +42,7 @@
 #define IDC_MEM_LABEL 1016
 #define IDC_MEM_MB 1017
 #define IDC_MEM_RANGE 1018
-#define IDC_PROFILE_LABEL 1019
-#define IDC_PROFILE_VALUE 1020
-#define IDC_PROFILE_VERSION 1021
-#define IDC_OFFLINE_LABEL 1022
-#define IDC_OFFLINE_EDIT 1023
-#define IDC_OFFLINE_BTN 1024
-#define IDC_MS_LABEL 1025
-#define IDC_MS_LOGIN_BTN 1026
-#define IDC_MS_CODE_EDIT 1027
-#define IDC_MS_COMPLETE_BTN 1028
-#define IDC_MS_LOGOUT_BTN 1029
-#define IDC_MS_STATUS 1030
-#define IDC_ACCOUNT_LIST 1031
-#define IDC_ACCOUNT_USE 1032
-#define IDC_ACCOUNT_REMOVE 1033
 #define EM_SETCUEBANNER_LOCAL 0x1501
-#define WM_APP_MS_LOGIN_DONE (WM_APP + 21)
-#define WM_APP_AVATAR_READY (WM_APP + 22)
 typedef struct { NMHDR hdr; DWORD dwDrawStage; HDC hdc; RECT rc; DWORD dwItemSpec; UINT uItemState; LPARAM lItemlParam; COLORREF clrText; } NMCUSTOMDRAW_LOCAL;
 #define CDDS_PREPAINT_LOCAL 0x00000001
 #define CDRF_DODEFAULT_LOCAL 0x00000000
@@ -110,7 +92,6 @@ typedef struct Layout {
     float W, H;
     TRect items[4];
     TRect settingsBtn;
-    TRect logoutBtn;
     TRect launchBtn;
     TRect card;
     TRect openBtn, detectBtn, resetGameBtn, resetJavaBtn, tab;
@@ -122,7 +103,6 @@ static HWND g_hwnd;
 static ULONG_PTR g_gdiplusToken;
 static HWND g_list;
 static HWND g_settingsBtn;
-static HWND g_logoutBtn;
 static HWND g_launchBtn;
 static HWND g_openBtn;
 static HWND g_detectBtn;
@@ -134,18 +114,11 @@ static int g_settingsTab = 0;
 static int g_tabHover = -1;
 static int g_tabTracking = 0;
 static HWND g_gameLabel, g_gameValue, g_javaLabel, g_javaValue;
-static HWND g_memLabel, g_memMb, g_memRange, g_profileLabel, g_profileValue, g_profileVersion;
-static HWND g_offlineLabel, g_offlineEdit, g_offlineBtn;
-static HWND g_msLabel, g_msLoginBtn, g_msCodeEdit, g_msCompleteBtn, g_msLogoutBtn, g_msStatus;
-static HWND g_accountList, g_accountUseBtn, g_accountRemoveBtn;
+static HWND g_memLabel, g_memMb, g_memRange;
 #define MAX_NATIVE_BUTTONS 16
 static HWND g_nativeButtons[MAX_NATIVE_BUTTONS];
 static WNDPROC g_nativeButtonProcs[MAX_NATIVE_BUTTONS];
 static int g_nativeButtonCount;
-static int g_msLoginRunning = 0;
-static WCHAR g_msLoginError[512];
-static WCHAR g_msCode[4096];
-static int g_avatarRunning = 0;
 static HWND g_memEdit;
 static HBRUSH g_editBrush;
 static HBRUSH g_panelBrush;
@@ -231,77 +204,6 @@ static void apply_control_region(HWND hwnd, int radius) {
     if (region) SetWindowRgn(hwnd, region, TRUE);
 }
 
-/* PCL-compatible legacy UUID and default Steve/Alex head selection. */
-static unsigned int pcl_stable_hash(const WCHAR *text) {
-    uint32_t hash1 = 5381, hash2 = 5381;
-    int i, length = (int)wcslen(text);
-    for (i = 0; i < length; i += 2) {
-        hash1 = ((hash1 << 5) + hash1) ^ (uint32_t)text[i];
-        if (i == length - 1) break;
-        hash2 = ((hash2 << 5) + hash2) ^ (uint32_t)text[i + 1];
-    }
-    return (unsigned int)(hash1 + hash2 * 1566083941u);
-}
-
-static void pcl_legacy_uuid(const WCHAR *name, WCHAR out[33]) {
-    WCHAR lenHex[17], hashHex[17], full[33];
-    unsigned int length = (unsigned int)wcslen(name);
-    unsigned int hash = pcl_stable_hash(name);
-    int i;
-    wsprintfW(lenHex, L"%X", length);
-    wsprintfW(hashHex, L"%X", hash);
-    for (i = (int)wcslen(lenHex); i < 16; i++) lenHex[i] = L'0';
-    lenHex[16] = 0;
-    for (i = (int)wcslen(hashHex); i < 16; i++) hashHex[i] = L'0';
-    hashHex[16] = 0;
-    wsprintfW(full, L"%s%s", lenHex, hashHex);
-    for (i = 0; i < 12; i++) out[i] = full[i];
-    out[12] = L'3';
-    for (i = 0; i < 3; i++) out[13 + i] = full[13 + i];
-    out[16] = L'9';
-    for (i = 0; i < 15; i++) out[17 + i] = full[17 + i];
-    out[32] = 0;
-}
-
-static int hex_value(WCHAR c) {
-    if (c >= L'0' && c <= L'9') return c - L'0';
-    if (c >= L'a' && c <= L'f') return c - L'a' + 10;
-    if (c >= L'A' && c <= L'F') return c - L'A' + 10;
-    return 0;
-}
-
-static int pcl_offline_is_alex(const WCHAR *name) {
-    WCHAR uuid[33];
-    int a, b, c, d;
-    pcl_legacy_uuid(name ? name : L"", uuid);
-    a = hex_value(uuid[7]);
-    b = hex_value(uuid[15]);
-    c = hex_value(uuid[23]);
-    d = hex_value(uuid[31]);
-    return (a ^ b ^ c ^ d) & 1;
-}
-
-static const unsigned int pcl_steve_head[64] = {
-    0xFF332411, 0xFF332411, 0xFF3F2A15, 0xFF3F2A15, 0xFF3F2A15, 0xFF3F2A15, 0xFF332411, 0xFF2B1E0D,
-    0xFF241808, 0xFF332411, 0xFF332411, 0xFF3F2A15, 0xFF3F2A15, 0xFF332411, 0xFF3F2A15, 0xFF332411,
-    0xFF2B1E0D, 0xFF9B6349, 0xFFB3795E, 0xFFB7836B, 0xFFB3795E, 0xFFAA7259, 0xFF9B6349, 0xFF342512,
-    0xFF9B6349, 0xFFAA7259, 0xFFB3795E, 0xFFB3795E, 0xFFAA7259, 0xFFAA7259, 0xFFAA7259, 0xFF9B6349,
-    0xFFAA7259, 0xFFFFFFFF, 0xFF523D89, 0xFFAA7259, 0xFF9B6349, 0xFF523D89, 0xFFFFFFFF, 0xFFAA7259,
-    0xFF9B6349, 0xFFAA7259, 0xFFAA7259, 0xFF6A4030, 0xFF6A4030, 0xFFAA7259, 0xFFAA7259, 0xFF9B6349,
-    0xFF90593F, 0xFF8F5E3E, 0xFF492510, 0xFF774235, 0xFF774235, 0xFF421D0A, 0xFF8F5E3E, 0xFF815339,
-    0xFF94603E, 0xFF815339, 0xFF421D0A, 0xFF492510, 0xFF421D0A, 0xFF492510, 0xFF815339, 0xFF8F5E3E
-};
-
-static const unsigned int pcl_alex_head[64] = {
-    0xFFE58D3F, 0xFFF3A858, 0xFFEB983F, 0xFFF3A858, 0xFFE58D3F, 0xFFEB983F, 0xFFF3A858, 0xFFE58D3F,
-    0xFFEB983F, 0xFFF3A858, 0xFFE58D3F, 0xFFEB983F, 0xFFE58D3F, 0xFFE58D3F, 0xFFEB983F, 0xFFF3A858,
-    0xFFEB983F, 0xFFE58D3F, 0xFFEB983F, 0xFFE58D3F, 0xFFDFC4A2, 0xFFDFC4A2, 0xFFE58D3F, 0xFFEB983F,
-    0xFFEB983F, 0xFFEB983F, 0xFFE58D3F, 0xFFEBD0B0, 0xFFEFDABF, 0xFFEBD0B0, 0xFFEBD0B0, 0xFFE58D3F,
-    0xFFEBD0B0, 0xFFFFFFFF, 0xFF236224, 0xFFEFDABF, 0xFFEFDABF, 0xFF236224, 0xFFFFFFFF, 0xFFEBD0B0,
-    0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF,
-    0xFFEFDABF, 0xFFEFDABF, 0xFFEFBAB1, 0xFFEFBBB1, 0xFFEFBBB1, 0xFFEFDABF, 0xFFEFDABF, 0xFFEBD0B0,
-    0xFFEBD0B0, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEFDABF, 0xFFEBD0B0, 0xFFDFC4A2
-};
 static int g_launching = 0;
 #define LAUNCH_IDLE     0
 #define LAUNCH_STARTING 1
@@ -548,13 +450,9 @@ static Layout make_layout(void) {
         l.items[i].h = 22.0f;
     }
     l.settingsBtn.x = 10.0f;
-    l.settingsBtn.y = H - 68.0f;
+    l.settingsBtn.y = H - 34.0f;
     l.settingsBtn.w = 180.0f;
     l.settingsBtn.h = 24.0f;
-    l.logoutBtn.x = 10.0f;
-    l.logoutBtn.y = H - 34.0f;
-    l.logoutBtn.w = 180.0f;
-    l.logoutBtn.h = 24.0f;
     l.launchBtn.x = 210.0f;
     l.launchBtn.y = H - 34.0f;
     l.launchBtn.w = W - 210.0f - 10.0f;
@@ -916,12 +814,9 @@ static void draw_tab_item(const DRAWITEMSTRUCT *d) {
     SelectObject(d->hDC, oldFont);
 }
 static int is_owner_button(HWND hwnd) {
-    return hwnd && (hwnd == g_settingsBtn || hwnd == g_logoutBtn || hwnd == g_launchBtn ||
+    return hwnd && (hwnd == g_settingsBtn || hwnd == g_launchBtn ||
                     hwnd == g_openBtn || hwnd == g_detectBtn ||
-                    hwnd == g_resetGameBtn || hwnd == g_resetJavaBtn ||
-                    hwnd == g_offlineBtn || hwnd == g_msLoginBtn ||
-                    hwnd == g_msCompleteBtn || hwnd == g_msLogoutBtn ||
-                    hwnd == g_accountUseBtn || hwnd == g_accountRemoveBtn);
+                    hwnd == g_resetGameBtn || hwnd == g_resetJavaBtn);
 }
 
 static void update_hover_states(void) {
@@ -1010,9 +905,6 @@ static void create_controls(HWND hwnd) {
     g_settingsBtn = CreateWindowExW(0, L"BUTTON", L"Settings",
                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_SETTINGS, inst, 0);
-    g_logoutBtn = CreateWindowExW(0, L"BUTTON", L"Account",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LOGOUT, inst, 0);
     g_launchBtn = CreateWindowExW(0, L"BUTTON", L"Launch",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_LAUNCH, inst, 0);
@@ -1061,71 +953,14 @@ static void create_controls(HWND hwnd) {
     g_memRange = CreateWindowExW(0, L"STATIC", L"(1024 - 32768)",
                                  WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
                                  0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MEM_RANGE, inst, 0);
-    g_profileLabel = CreateWindowExW(0, L"STATIC", L"ACCOUNT",
-                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_LABEL, inst, 0);
-    g_profileValue = CreateWindowExW(0, L"STATIC", L"",
-                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_VALUE, inst, 0);
-    g_profileVersion = CreateWindowExW(0, L"STATIC", L"",
-                                       WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                       0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_PROFILE_VERSION, inst, 0);
-    g_offlineLabel = CreateWindowExW(0, L"STATIC", L"OFFLINE NAME",
-                                     WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                     0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_LABEL, inst, 0);
-    g_offlineEdit = CreateWindowExW(0, L"EDIT", L"",
-                                    WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_EDIT, inst, 0);
-    g_offlineBtn = CreateWindowExW(0, L"BUTTON", L"Add Offline",
-                                   WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_OFFLINE_BTN, inst, 0);
-    g_msLabel = CreateWindowExW(0, L"STATIC", L"MICROSOFT ACCOUNT",
-                                WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LABEL, inst, 0);
-    g_msLoginBtn = CreateWindowExW(0, L"BUTTON", L"Microsoft Login",
-                                   WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGIN_BTN, inst, 0);
-    g_msLogoutBtn = CreateWindowExW(0, L"BUTTON", L"Log out",
-                                    WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_LOGOUT_BTN, inst, 0);
-    g_msCodeEdit = CreateWindowExW(0, L"EDIT", L"",
-                                   WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                                   0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_CODE_EDIT, inst, 0);
-    g_msCompleteBtn = CreateWindowExW(0, L"BUTTON", L"Complete",
-                                      WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_COMPLETE_BTN, inst, 0);
-    g_msStatus = CreateWindowExW(0, L"STATIC", L"",
-                                 WS_CHILD | WS_CLIPSIBLINGS | 0x00004000 | 0x00000080,
-                                 0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_MS_STATUS, inst, 0);
-    g_accountList = CreateWindowExW(0, L"LISTBOX", L"",
-                                    WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY |
-                                        LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
-                                    0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_LIST, inst, 0);
-    g_accountUseBtn = CreateWindowExW(0, L"BUTTON", L"Login",
-                                      WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                      0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_USE, inst, 0);
-    g_accountRemoveBtn = CreateWindowExW(0, L"BUTTON", L"Remove",
-                                         WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                                         0, 0, 0, 0, hwnd, (HMENU)(INT_PTR)IDC_ACCOUNT_REMOVE, inst, 0);
     {
         HWND buttons[] = {
-            g_settingsBtn, g_logoutBtn, g_launchBtn, g_openBtn, g_detectBtn,
-            g_resetGameBtn, g_resetJavaBtn, g_offlineBtn, g_msLoginBtn,
-            g_msLogoutBtn, g_msCompleteBtn, g_accountUseBtn, g_accountRemoveBtn
+            g_settingsBtn, g_launchBtn, g_openBtn, g_detectBtn,
+            g_resetGameBtn, g_resetJavaBtn
         };
         int i;
         for (i = 0; i < (int)(sizeof(buttons) / sizeof(buttons[0])); i++)
             install_native_button(buttons[i]);
-    }
-    if (g_offlineEdit) {
-        set_window_theme_none(g_offlineEdit);
-        SendMessageW(g_offlineEdit, EM_SETLIMITTEXT, 16, 0);
-        SendMessageW(g_offlineEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
-    }
-    if (g_msCodeEdit) {
-        set_window_theme_none(g_msCodeEdit);
-        SendMessageW(g_msCodeEdit, EM_SETCUEBANNER_LOCAL, TRUE, (LPARAM)L"Paste the redirect URL or code");
-        SendMessageW(g_msCodeEdit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
     }
     if (g_memEdit) {
         WCHAR memBuf[32];
@@ -1194,7 +1029,7 @@ static void paint_native_button(HWND hwnd, HDC target) {
     oldbmp = SelectObject(mem, bmp);
     {
         int radius = (int)(system_button_radius() * g_scale + 0.5f);
-        COLORREF parent = (id == IDC_SETTINGS || id == IDC_LOGOUT || id == IDC_LAUNCH)
+        COLORREF parent = (id == IDC_SETTINGS || id == IDC_LAUNCH)
                               ? RGB_BG : RGB_PANEL;
         HGDIOBJ oldPen, oldBrush;
         HPEN pen;
@@ -1213,13 +1048,6 @@ static void paint_native_button(HWND hwnd, HDC target) {
     }
     label[0] = 0;
     GetWindowTextW(hwnd, label, 128);
-    if (id == IDC_ACCOUNT_USE) {
-        scopy(label, L"Login", 128);
-        textColor = IsWindowEnabled(hwnd) ? RGB(92, 200, 130) : RGB(120, 124, 132);
-    } else if (id == IDC_ACCOUNT_REMOVE) {
-        scopy(label, L"Remove", 128);
-        textColor = IsWindowEnabled(hwnd) ? RGB(225, 82, 82) : RGB(120, 124, 132);
-    }
     if (pressed) OffsetRect(&rc, 0, (int)(1 * g_scale));
     SetBkMode(mem, TRANSPARENT);
     SetTextColor(mem, textColor);
@@ -1286,18 +1114,17 @@ static void install_native_button(HWND hwnd) {
 
 
 static void apply_control_fonts(void) {
-    HWND controls[9];
+    HWND controls[8];
     int i;
     controls[0] = g_list;
     controls[1] = g_settingsBtn;
-    controls[2] = g_logoutBtn;
-    controls[3] = g_launchBtn;
-    controls[4] = g_openBtn;
-    controls[5] = g_detectBtn;
-    controls[6] = g_memEdit;
-    controls[7] = g_resetGameBtn;
-    controls[8] = g_resetJavaBtn;
-    for (i = 0; i < 9; i++) {
+    controls[2] = g_launchBtn;
+    controls[3] = g_openBtn;
+    controls[4] = g_detectBtn;
+    controls[5] = g_memEdit;
+    controls[6] = g_resetGameBtn;
+    controls[7] = g_resetJavaBtn;
+    for (i = 0; i < 8; i++) {
         if (controls[i]) SendMessageW(controls[i], WM_SETFONT, (WPARAM)g_font20, TRUE);
     }
     if (g_list) SendMessageW(g_list, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(22 * g_scale + 0.5f));
@@ -1306,36 +1133,14 @@ static void apply_control_fonts(void) {
     if (g_memLabel) SendMessageW(g_memLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
     if (g_memMb) SendMessageW(g_memMb, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_memRange) SendMessageW(g_memRange, WM_SETFONT, (WPARAM)g_font16, TRUE);
-    if (g_profileLabel) SendMessageW(g_profileLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
     if (g_gameValue) SendMessageW(g_gameValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
     if (g_javaValue) SendMessageW(g_javaValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
-    if (g_profileValue) SendMessageW(g_profileValue, WM_SETFONT, (WPARAM)g_font22, TRUE);
-    if (g_profileVersion) SendMessageW(g_profileVersion, WM_SETFONT, (WPARAM)g_font16, TRUE);
-    if (g_offlineLabel) SendMessageW(g_offlineLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
-    if (g_msLabel) SendMessageW(g_msLabel, WM_SETFONT, (WPARAM)g_font16, TRUE);
-    if (g_msStatus) SendMessageW(g_msStatus, WM_SETFONT, (WPARAM)g_font16, TRUE);
-    if (g_offlineEdit) SendMessageW(g_offlineEdit, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_msCodeEdit) SendMessageW(g_msCodeEdit, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_offlineBtn) SendMessageW(g_offlineBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_msLoginBtn) SendMessageW(g_msLoginBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_msCompleteBtn) SendMessageW(g_msCompleteBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_msLogoutBtn) SendMessageW(g_msLogoutBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_accountList) SendMessageW(g_accountList, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_accountUseBtn) SendMessageW(g_accountUseBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_accountRemoveBtn) SendMessageW(g_accountRemoveBtn, WM_SETFONT, (WPARAM)g_font20, TRUE);
-    if (g_accountList) SendMessageW(g_accountList, LB_SETITEMHEIGHT, 0, (LPARAM)(int)(54 * g_scale + 0.5f));
     if (g_tab) SendMessageW(g_tab, WM_SETFONT, (WPARAM)g_font20, TRUE);
 }
 
 static void layout_controls(void) {
     Layout l = make_layout();
     int x, y, w, h;
-    float accountBottom = l.H - 64.0f;
-    float accountListW = (l.card.w - 24.0f) * 0.56f;
-    float accountListH = accountBottom - 8.0f - 64.0f;
-    float accountRightX = l.card.x + 8.0f + accountListW + 8.0f;
-    float accountRightW = l.card.x + l.card.w - 8.0f - accountRightX;
-    float accountBottomButton = accountBottom - 32.0f;
     if (!g_list) return;
     x = (int)(l.items[0].x * g_scale + 0.5f);
     y = (int)(l.items[0].y * g_scale + 0.5f);
@@ -1361,10 +1166,6 @@ static void layout_controls(void) {
     SetWindowPos(g_settingsBtn, 0,
                  (int)(l.settingsBtn.x * g_scale + 0.5f), (int)(l.settingsBtn.y * g_scale + 0.5f),
                  (int)(l.settingsBtn.w * g_scale + 0.5f), (int)(l.settingsBtn.h * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_logoutBtn, 0,
-                 (int)(l.logoutBtn.x * g_scale + 0.5f), (int)(l.logoutBtn.y * g_scale + 0.5f),
-                 (int)(l.logoutBtn.w * g_scale + 0.5f), (int)(l.logoutBtn.h * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowPos(g_launchBtn, 0,
                  (int)(l.launchBtn.x * g_scale + 0.5f), (int)(l.launchBtn.y * g_scale + 0.5f),
@@ -1422,73 +1223,9 @@ static void layout_controls(void) {
                  (int)((l.card.x + 138) * g_scale + 0.5f), (int)(124 * g_scale + 0.5f),
                  (int)(140 * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
                  SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_profileLabel, 0,
-                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(104 * g_scale + 0.5f),
-                 (int)(220 * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_profileValue, 0,
-                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(120 * g_scale + 0.5f),
-                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(20 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_profileVersion, 0,
-                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
-                 (int)((l.card.w - 16) * g_scale + 0.5f), (int)(18 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_offlineLabel, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(64 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_offlineEdit, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(82 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_offlineBtn, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(110 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msLabel, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(142 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msLoginBtn, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(160 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msLogoutBtn, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msCodeEdit, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(188 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(22 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msCompleteBtn, 0,
-                 (int)(accountRightX * g_scale + 0.5f), (int)(214 * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_msStatus, 0,
-                 (int)(accountRightX * g_scale + 0.5f),
-                 (int)((accountBottomButton - 24) * g_scale + 0.5f),
-                 (int)(accountRightW * g_scale + 0.5f), (int)(16 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_accountList, 0,
-                 (int)((l.card.x + 8) * g_scale + 0.5f), (int)(64 * g_scale + 0.5f),
-                 (int)(accountListW * g_scale + 0.5f), (int)(accountListH * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_accountUseBtn, 0,
-                 (int)(accountRightX * g_scale + 0.5f),
-                 (int)(accountBottomButton * g_scale + 0.5f),
-                 (int)(((accountRightW - 8.0f) / 2.0f) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(g_accountRemoveBtn, 0,
-                 (int)((accountRightX + (accountRightW + 8.0f) / 2.0f) * g_scale + 0.5f),
-                 (int)(accountBottomButton * g_scale + 0.5f),
-                 (int)(((accountRightW - 8.0f) / 2.0f) * g_scale + 0.5f), (int)(24 * g_scale + 0.5f),
-                 SWP_NOZORDER | SWP_NOACTIVATE);
     {
         int editRadius = (int)(system_button_radius() * g_scale + 0.5f);
-        int listRadius = (int)(system_panel_radius() * g_scale + 0.5f);
         apply_control_region(g_memEdit, editRadius);
-        apply_control_region(g_offlineEdit, editRadius);
-        apply_control_region(g_msCodeEdit, editRadius);
-        apply_control_region(g_accountList, listRadius);
     }
     if (g_descView) {
         int descX = (int)(l.mainX * g_scale + 0.5f);
@@ -1525,18 +1262,17 @@ static void sync_page_controls(void) {
     }
     if (g_launchBtn) {
         const WCHAR *label = L"Launch";
-        if (g_page == 1 || g_page == 2) label = L"Done";
+        if (g_page == 1) label = L"Done";
         else if (g_launchState == LAUNCH_STARTING) label = L"Waiting for the game";
         else if (g_launchState == LAUNCH_RUNNING)
             label = (g_hoverButton == g_launchBtn) ? L"Shutdown" : L"Running";
         else if (g_launchState == LAUNCH_FAILED) label = L"Retry";
         SetWindowTextW(g_launchBtn, label);
-        EnableWindow(g_launchBtn, g_page == 1 || g_page == 2 || g_launchState == LAUNCH_RUNNING ||
-                                 (g_launchState != LAUNCH_STARTING && !g_launching && !g_msLoginRunning &&
+        EnableWindow(g_launchBtn, g_page == 1 || g_launchState == LAUNCH_RUNNING ||
+                                 (g_launchState != LAUNCH_STARTING && !g_launching &&
                                   g_versions.count > 0));
     }
     if (g_settingsBtn) EnableWindow(g_settingsBtn, !g_launching);
-    if (g_logoutBtn) EnableWindow(g_logoutBtn, !g_launching);
     if (g_tab) {
         ShowWindow(g_tab, g_page == 1 ? SW_SHOW : SW_HIDE);
         EnableWindow(g_tab, !g_launching);
@@ -1560,48 +1296,6 @@ static void sync_page_controls(void) {
     if (g_memLabel) ShowWindow(g_memLabel, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
     if (g_memMb) ShowWindow(g_memMb, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
     if (g_memRange) ShowWindow(g_memRange, (g_page == 1 && g_settingsTab == 1) ? SW_SHOW : SW_HIDE);
-    if (g_profileLabel) ShowWindow(g_profileLabel, SW_HIDE);
-    if (g_profileValue) ShowWindow(g_profileValue, SW_HIDE);
-    if (g_profileVersion) ShowWindow(g_profileVersion, SW_HIDE);
-    if (g_offlineLabel) ShowWindow(g_offlineLabel, (g_page == 2) ? SW_SHOW : SW_HIDE);
-    if (g_offlineEdit) {
-        ShowWindow(g_offlineEdit, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_offlineEdit, !g_launching && !g_msLoginRunning);
-    }
-    if (g_offlineBtn) {
-        ShowWindow(g_offlineBtn, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_offlineBtn, !g_launching && !g_msLoginRunning);
-    }
-    if (g_msLabel) ShowWindow(g_msLabel, (g_page == 2) ? SW_SHOW : SW_HIDE);
-    if (g_msLoginBtn) {
-        ShowWindow(g_msLoginBtn, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_msLoginBtn, !g_launching && !g_msLoginRunning);
-    }
-    if (g_msLogoutBtn) {
-        ShowWindow(g_msLogoutBtn, SW_HIDE);
-        EnableWindow(g_msLogoutBtn, !g_launching && !g_msLoginRunning);
-    }
-    if (g_msCodeEdit) {
-        ShowWindow(g_msCodeEdit, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_msCodeEdit, !g_launching && !g_msLoginRunning);
-    }
-    if (g_msCompleteBtn) {
-        ShowWindow(g_msCompleteBtn, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_msCompleteBtn, !g_launching && !g_msLoginRunning);
-    }
-    if (g_msStatus) ShowWindow(g_msStatus, (g_page == 2) ? SW_SHOW : SW_HIDE);
-    if (g_accountList) {
-        ShowWindow(g_accountList, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_accountList, !g_launching && !g_msLoginRunning);
-    }
-    if (g_accountUseBtn) {
-        ShowWindow(g_accountUseBtn, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_accountUseBtn, !g_launching && !g_msLoginRunning);
-    }
-    if (g_accountRemoveBtn) {
-        ShowWindow(g_accountRemoveBtn, (g_page == 2) ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_accountRemoveBtn, !g_launching && !g_msLoginRunning);
-    }
     if (g_resetGameBtn) {
         ShowWindow(g_resetGameBtn, (g_page == 1 && g_settingsTab == 0) ? SW_SHOW : SW_HIDE);
         EnableWindow(g_resetGameBtn, !g_launching);
@@ -1611,10 +1305,7 @@ static void sync_page_controls(void) {
         EnableWindow(g_resetJavaBtn, !g_launching);
     }
     if (g_page == 0 && (g_hoverButton == g_openBtn || g_hoverButton == g_detectBtn ||
-                        g_hoverButton == g_resetGameBtn || g_hoverButton == g_resetJavaBtn ||
-                        g_hoverButton == g_offlineBtn || g_hoverButton == g_msLoginBtn ||
-                        g_hoverButton == g_msCompleteBtn || g_hoverButton == g_msLogoutBtn ||
-                        g_hoverButton == g_accountUseBtn || g_hoverButton == g_accountRemoveBtn)) {
+                        g_hoverButton == g_resetGameBtn || g_hoverButton == g_resetJavaBtn)) {
         g_hoverButton = 0;
     }
 }
@@ -1706,15 +1397,6 @@ static void draw_launch_bar(GpGraphics *g, const Layout *l) {
     GdipResetClip(g);
     GdipDeletePath(clip);
 }
-static void draw_account_shapes(GpGraphics *g, const Layout *l) {
-    float bottom = l->H - 64.0f;
-    float listW = (l->card.w - 24.0f) * 0.56f;
-    float listH = bottom - 8.0f - 64.0f;
-    panel(g, RGB_PANEL, RGB(47, 51, 60), l->card.x, 58.0f, l->card.w, bottom - 58.0f,
-          system_panel_radius(), 1);
-    panel(g, RGB(31, 34, 40), RGB_BORDER, l->card.x + 8, 64.0f, listW, listH, 2.0f, 1);
-}
-
 static void draw_page_dividers(GpGraphics *g, const Layout *l) {
     fill_rect(g, RGB_SEP, l->launchBtn.x, l->launchBtn.y - 20.0f,
               l->launchBtn.w, 1.0f);
@@ -1725,7 +1407,6 @@ static void draw_shapes(GpGraphics *g, const Layout *l) {
     draw_sidebar(g, l);
     if (g_page == 0) draw_release_shapes(g, l);
     else if (g_page == 1) draw_settings_shapes(g, l);
-    else draw_account_shapes(g, l);
     draw_page_dividers(g, l);
     draw_launch_bar(g, l);
 }
@@ -2411,98 +2092,7 @@ static void draw_texts(HDC dc, const Layout *l) {
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
         draw_text(dc, L"Launcher configuration", l->mainX, 30, l->mainW, 18, g_font24, RGB(158, 161, 168),
                   DT_LEFT | DT_TOP | DT_SINGLELINE);
-    } else {
-        draw_text(dc, L"Accounts", l->mainX, 4, l->mainW, 24, g_font36, RGB_HEADLINE,
-                  DT_LEFT | DT_TOP | DT_SINGLELINE);
-        draw_text(dc, L"Select an account or add a new one", l->mainX, 30, l->mainW, 18,
-                  g_font24, RGB(158, 161, 168), DT_LEFT | DT_TOP | DT_SINGLELINE);
     }
-
-
-}
-
-
-static void draw_pcl_offline_head(HDC dc, int x, int y, int size, const WCHAR *name) {
-    const unsigned int *pixels = pcl_offline_is_alex(name) ? pcl_alex_head : pcl_steve_head;
-    int row, col;
-    for (row = 0; row < 8; row++) {
-        for (col = 0; col < 8; col++) {
-            unsigned int argb = pixels[row * 8 + col];
-            RECT r;
-            HBRUSH brush;
-            r.left = x + col * size / 8;
-            r.top = y + row * size / 8;
-            r.right = x + (col + 1) * size / 8;
-            r.bottom = y + (row + 1) * size / 8;
-            brush = CreateSolidBrush(RGB((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF));
-            FillRect(dc, &r, brush);
-            DeleteObject(brush);
-        }
-    }
-}
-
-static void draw_account_avatar(HDC dc, int x, int y, int size, const AccountEntry *a) {
-    WCHAR path[PATH_CAP];
-    GpImage *image = 0;
-    GpGraphics *graphics = 0;
-    if (a && a->type == 1 && account_avatar_path(a->uuid, path, PATH_CAP) &&
-        GdipLoadImageFromFile(path, &image) == 0) {
-        if (GdipCreateFromHDC(dc, &graphics) == 0) {
-            GdipSetInterpolationMode(graphics, 7);
-            GdipDrawImageRectI(graphics, image, x, y, size, size);
-            GdipDeleteGraphics(graphics);
-        }
-        GdipDisposeImage(image);
-        return;
-    }
-    draw_pcl_offline_head(dc, x, y, size, a ? a->name : L"");
-}
-
-static void draw_account_item(const DRAWITEMSTRUCT *d) {
-    AccountEntry *a;
-    int index = (int)d->itemData;
-    RECT r = d->rcItem;
-    HBRUSH brush;
-    HGDIOBJ oldFont;
-    int pad = (int)(8 * g_scale + 0.5f);
-    int avatar = (int)(40 * g_scale + 0.5f);
-    int textX;
-    if (index < 0 || index >= g_settings.accountCount) return;
-    a = &g_settings.accounts[index];
-    brush = CreateSolidBrush(d->itemState & ODS_SELECTED ? RGB(42, 46, 55) : RGB(31, 34, 40));
-    FillRect(d->hDC, &r, brush);
-    DeleteObject(brush);
-    if (index == g_settings.activeAccount) {
-        HPEN pen = CreatePen(PS_SOLID, 1, RGB(111, 78, 170));
-        HGDIOBJ oldPen = SelectObject(d->hDC, pen);
-        MoveToEx(d->hDC, r.left, r.top, 0);
-        LineTo(d->hDC, r.left, r.bottom - 1);
-        SelectObject(d->hDC, oldPen);
-        DeleteObject(pen);
-    }
-    textX = r.left + pad + avatar + (int)(8 * g_scale + 0.5f);
-    draw_account_avatar(d->hDC, r.left + pad, r.top + (int)(7 * g_scale + 0.5f), avatar, a);
-    SetBkMode(d->hDC, TRANSPARENT);
-    SetTextColor(d->hDC, RGB(228, 230, 235));
-    oldFont = SelectObject(d->hDC, g_font20);
-    {
-        RECT nameRect = { textX, r.top + (int)(5 * g_scale), r.right - pad, r.top + (int)(28 * g_scale) };
-        DrawTextW(d->hDC, a->name, -1, &nameRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    }
-    SetTextColor(d->hDC, RGB(150, 154, 162));
-    SelectObject(d->hDC, g_font16);
-    {
-        RECT typeRect = { textX, r.top + (int)(27 * g_scale), r.right - pad, r.top + (int)(46 * g_scale) };
-        const WCHAR *type = a->type == 1 ? L"Microsoft account" : L"Offline account";
-        DrawTextW(d->hDC, type, -1, &typeRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    }
-    if (index == g_settings.activeAccount) {
-        RECT activeRect = { r.right - (int)(56 * g_scale), r.top + (int)(5 * g_scale),
-                            r.right - pad, r.top + (int)(23 * g_scale) };
-        SetTextColor(d->hDC, RGB(156, 120, 220));
-        DrawTextW(d->hDC, L"Active", -1, &activeRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-    }
-    SelectObject(d->hDC, oldFont);
 }
 
 
@@ -2641,7 +2231,7 @@ static void start_launch(void) {
         shutdown_game();
         return;
     }
-    if (g_launchState == LAUNCH_STARTING || g_launching || g_msLoginRunning) return;
+    if (g_launchState == LAUNCH_STARTING || g_launching) return;
     if (g_versions.count <= 0) return;
     g_launching = 1;
     g_launchState = LAUNCH_STARTING;
@@ -2734,239 +2324,10 @@ static void sync_memory_from_edit(int clamp) {
 }
 
 static void refresh_settings_statics(void) {
-    WCHAR profile[128];
     if (g_gameValue) SetWindowTextW(g_gameValue, g_settings.gameDir);
     if (g_javaValue)
         SetWindowTextW(g_javaValue, g_settings.javaPath[0] ? g_settings.javaPath : L"Select the Java folder");
-    if (g_profileValue) {
-        wsprintfW(profile, L"%s  (%s)", g_settings.username,
-                  g_settings.accountType == 1 ? L"Microsoft" : L"Offline");
-        SetWindowTextW(g_profileValue, profile);
-    }
-    if (g_offlineEdit) SetWindowTextW(g_offlineEdit, g_settings.username);
-    if (g_profileVersion)
-        SetWindowTextW(g_profileVersion, g_versionFound ? g_versionId : L"No Minecraft version found");
-    if (g_msStatus && !g_msLoginRunning)
-        SetWindowTextW(g_msStatus, g_settings.accountType == 1
-                                       ? L"Microsoft account connected."
-                                       : L"Offline account.");
 }
-
-static void set_offline_account(void) {
-    WCHAR name[64];
-    WCHAR *p;
-    int n;
-    if (!g_offlineEdit) return;
-    GetWindowTextW(g_offlineEdit, name, 64);
-    p = name;
-    while (*p == L' ' || *p == L'\t') p++;
-    n = (int)wcslen(p);
-    while (n > 0 && (p[n - 1] == L' ' || p[n - 1] == L'\t')) p[--n] = 0;
-    if (!p[0]) scopy(p, L"Player", 64 - (int)(p - name));
-    scopy(g_settings.username, p, 64);
-    g_settings.accountType = 0;
-    g_settings.uuid[0] = 0;
-    g_settings.accessToken[0] = 0;
-    g_settings.refreshToken[0] = 0;
-    g_settings.tokenExpires = 0;
-    settings_save(&g_settings);
-    refresh_settings_statics();
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Offline account set.");
-    InvalidateRect(g_hwnd, 0, FALSE);
-}
-
-static void clear_microsoft_account(void) {
-    g_settings.accountType = 0;
-    g_settings.uuid[0] = 0;
-    g_settings.accessToken[0] = 0;
-    g_settings.refreshToken[0] = 0;
-    g_settings.tokenExpires = 0;
-    scopy(g_settings.username, L"novoline_rat", 64);
-    settings_save(&g_settings);
-    refresh_settings_statics();
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Signed out.");
-    InvalidateRect(g_hwnd, 0, FALSE);
-}
-
-static void begin_microsoft_login(void) {
-    HINSTANCE result;
-    if (g_msLoginRunning) return;
-    result = ShellExecuteW(0, L"open", msa_authorization_url(), 0, 0, SW_SHOWNORMAL);
-    if ((INT_PTR)result <= 32) {
-        if (g_msStatus) SetWindowTextW(g_msStatus, L"Could not open the browser.");
-        return;
-    }
-    if (g_msStatus)
-        SetWindowTextW(g_msStatus, L"Browser opened. Paste the redirect URL or code, then Complete.");
-    if (g_msCodeEdit) {
-        SetFocus(g_msCodeEdit);
-        SendMessageW(g_msCodeEdit, EM_SETSEL, 0, -1);
-    }
-}
-
-static DWORD WINAPI ms_login_thread(LPVOID param) {
-    int ok;
-    (void)param;
-    g_msLoginError[0] = 0;
-    ok = msa_login_with_code(g_msCode, &g_settings, g_msLoginError, 512);
-    PostMessageW(g_hwnd, WM_APP_MS_LOGIN_DONE, (WPARAM)ok, 0);
-    return 0;
-}
-
-static void complete_microsoft_login(void) {
-    HANDLE thread;
-    if (g_msLoginRunning || !g_msCodeEdit) return;
-    GetWindowTextW(g_msCodeEdit, g_msCode, 4096);
-    if (!g_msCode[0]) {
-        if (g_msStatus) SetWindowTextW(g_msStatus, L"Paste the authorization code first.");
-        return;
-    }
-    g_msLoginRunning = 1;
-    g_msLoginError[0] = 0;
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Signing in...");
-    sync_page_controls();
-    thread = CreateThread(0, 0, ms_login_thread, 0, 0, 0);
-    if (thread) CloseHandle(thread);
-    else {
-        g_msLoginRunning = 0;
-        if (g_msStatus) SetWindowTextW(g_msStatus, L"Could not start the login thread.");
-        sync_page_controls();
-    }
-}
-
-static DWORD WINAPI avatar_thread(LPVOID param) {
-    int i;
-    (void)param;
-    for (i = 0; i < g_settings.accountCount; i++) {
-        if (g_settings.accounts[i].type == 1 && g_settings.accounts[i].uuid[0]) {
-            WCHAR path[PATH_CAP];
-            account_download_avatar(g_settings.accounts[i].uuid, path, PATH_CAP);
-        }
-    }
-    PostMessageW(g_hwnd, WM_APP_AVATAR_READY, 0, 0);
-    return 0;
-}
-
-static void start_avatar_downloads(void) {
-    HANDLE thread;
-    int i, hasMs = 0;
-    if (g_avatarRunning) return;
-    for (i = 0; i < g_settings.accountCount; i++) {
-        if (g_settings.accounts[i].type == 1 && g_settings.accounts[i].uuid[0]) {
-            hasMs = 1;
-            break;
-        }
-    }
-    if (!hasMs) return;
-    g_avatarRunning = 1;
-    thread = CreateThread(0, 0, avatar_thread, 0, 0, 0);
-    if (thread) CloseHandle(thread);
-    else g_avatarRunning = 0;
-}
-
-static void refresh_account_list(void) {
-    int i;
-    if (!g_accountList) return;
-    SendMessageW(g_accountList, LB_RESETCONTENT, 0, 0);
-    for (i = 0; i < g_settings.accountCount; i++) {
-        LRESULT index = SendMessageW(g_accountList, LB_ADDSTRING, 0,
-                                     (LPARAM)g_settings.accounts[i].name);
-        if (index >= 0) SendMessageW(g_accountList, LB_SETITEMDATA, (WPARAM)index, (LPARAM)i);
-    }
-    if (g_settings.activeAccount >= 0 && g_settings.activeAccount < g_settings.accountCount)
-        SendMessageW(g_accountList, LB_SETCURSEL, (WPARAM)g_settings.activeAccount, 0);
-}
-
-static void sync_active_account(void) {
-    AccountEntry *a;
-    if (g_settings.activeAccount < 0 || g_settings.activeAccount >= g_settings.accountCount) return;
-    a = &g_settings.accounts[g_settings.activeAccount];
-    g_settings.accountType = a->type;
-    scopy(g_settings.username, a->name, 64);
-    scopy(g_settings.uuid, a->uuid, 64);
-    scopy(g_settings.accessToken, a->accessToken, 4096);
-    scopy(g_settings.refreshToken, a->refreshToken, 4096);
-    g_settings.tokenExpires = a->expires;
-}
-
-static void commit_active_account(void) {
-    AccountEntry *a;
-    if (g_settings.activeAccount < 0 || g_settings.activeAccount >= g_settings.accountCount) return;
-    a = &g_settings.accounts[g_settings.activeAccount];
-    a->type = g_settings.accountType;
-    scopy(a->name, g_settings.username, 64);
-    scopy(a->uuid, g_settings.uuid, 64);
-    scopy(a->accessToken, g_settings.accessToken, 4096);
-    scopy(a->refreshToken, g_settings.refreshToken, 4096);
-    a->expires = g_settings.tokenExpires;
-}
-
-static void add_offline_account(void) {
-    WCHAR name[64];
-    WCHAR *p;
-    int n;
-    if (!g_offlineEdit || g_settings.accountCount >= MAX_ACCOUNTS) {
-        if (g_msStatus) SetWindowTextW(g_msStatus, L"Account list is full.");
-        return;
-    }
-    GetWindowTextW(g_offlineEdit, name, 64);
-    p = name;
-    while (*p == L' ' || *p == L'\t') p++;
-    n = (int)wcslen(p);
-    while (n > 0 && (p[n - 1] == L' ' || p[n - 1] == L'\t')) p[--n] = 0;
-    if (!p[0]) scopy(p, L"Player", 64 - (int)(p - name));
-    {
-        AccountEntry *a = &g_settings.accounts[g_settings.accountCount];
-        ZeroMemory(a, sizeof(*a));
-        a->type = 0;
-        scopy(a->name, p, 64);
-    }
-    g_settings.activeAccount = g_settings.accountCount;
-    g_settings.accountCount++;
-    sync_active_account();
-    settings_save(&g_settings);
-    refresh_settings_statics();
-    refresh_account_list();
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Offline account added.");
-    InvalidateRect(g_hwnd, 0, FALSE);
-}
-
-static void use_selected_account(void) {
-    LRESULT sel = g_accountList ? SendMessageW(g_accountList, LB_GETCURSEL, 0, 0) : LB_ERR;
-    if (sel == LB_ERR || sel < 0 || sel >= g_settings.accountCount) return;
-    g_settings.activeAccount = (int)sel;
-    sync_active_account();
-    settings_save(&g_settings);
-    refresh_settings_statics();
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Active account changed.");
-    InvalidateRect(g_hwnd, 0, FALSE);
-}
-
-static void remove_selected_account(void) {
-    LRESULT sel = g_accountList ? SendMessageW(g_accountList, LB_GETCURSEL, 0, 0) : LB_ERR;
-    int index;
-    if (sel == LB_ERR || sel < 0 || sel >= g_settings.accountCount) return;
-    index = (int)sel;
-    if (g_settings.accountCount <= 1) {
-        if (g_msStatus) SetWindowTextW(g_msStatus, L"At least one account is required.");
-        return;
-    }
-    memmove(&g_settings.accounts[index], &g_settings.accounts[index + 1],
-            (size_t)(g_settings.accountCount - index - 1) * sizeof(AccountEntry));
-    g_settings.accountCount--;
-    if (g_settings.activeAccount > index) g_settings.activeAccount--;
-    else if (g_settings.activeAccount == index) {
-        if (g_settings.activeAccount >= g_settings.accountCount)
-            g_settings.activeAccount = g_settings.accountCount - 1;
-        sync_active_account();
-    }
-    settings_save(&g_settings);
-    refresh_settings_statics();
-    refresh_account_list();
-    if (g_msStatus) SetWindowTextW(g_msStatus, L"Account removed.");
-    InvalidateRect(g_hwnd, 0, FALSE);
-}
-
 
 static void reset_game_path(void) {
     WCHAR versionJson[PATH_CAP];
@@ -2985,36 +2346,31 @@ static void reset_java_path(void) {
 }
 
 static void handle_command(int id) {
-    if (g_msLoginRunning) return;
     if (g_launching && id != IDC_LAUNCH) {
         return;
     }
     switch (id) {
         case IDC_SETTINGS:
-            if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
-            g_settingsTab = 0;
-            g_page = 1;
-            refresh_settings_statics();
-            if (g_memEdit) {
-                WCHAR memBuf[32];
-                wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
-                SetWindowTextW(g_memEdit, memBuf);
+            if (g_page == 1) {
+                g_page = 0;
+            } else {
+                g_page = 1;
+                if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
+                g_settingsTab = 0;
+                refresh_settings_statics();
+                if (g_memEdit) {
+                    WCHAR memBuf[32];
+                    wsprintfW(memBuf, L"%d", g_settings.memoryMB > 0 ? g_settings.memoryMB : 4096);
+                    SetWindowTextW(g_memEdit, memBuf);
+                }
             }
             sync_page_controls();
             InvalidateRect(g_hwnd, 0, FALSE);
             PostMessageW(g_hwnd, WM_APP_TAB_RESET, 0, 0);
             break;
-        case IDC_LOGOUT:
-            g_page = 2;
-            refresh_settings_statics();
-            refresh_account_list();
-            start_avatar_downloads();
-            sync_page_controls();
-            InvalidateRect(g_hwnd, 0, FALSE);
-            break;
         case IDC_LAUNCH:
             sync_memory_from_edit(1);
-            if (g_page == 1 || g_page == 2) {
+            if (g_page != 0) {
                 g_page = 0;
                 sync_page_controls();
                 InvalidateRect(g_hwnd, 0, FALSE);
@@ -3033,24 +2389,6 @@ static void handle_command(int id) {
             break;
         case IDC_RESET_JAVA:
             reset_java_path();
-            break;
-        case IDC_OFFLINE_BTN:
-            add_offline_account();
-            break;
-        case IDC_MS_LOGIN_BTN:
-            begin_microsoft_login();
-            break;
-        case IDC_MS_COMPLETE_BTN:
-            complete_microsoft_login();
-            break;
-        case IDC_MS_LOGOUT_BTN:
-            clear_microsoft_account();
-            break;
-        case IDC_ACCOUNT_USE:
-            use_selected_account();
-            break;
-        case IDC_ACCOUNT_REMOVE:
-            remove_selected_account();
             break;
         default:
             break;
@@ -3282,16 +2620,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_DRAWITEM:
-            if (((DRAWITEMSTRUCT *)lp)->CtlID == IDC_ACCOUNT_LIST) {
-                draw_account_item((const DRAWITEMSTRUCT *)lp);
-                return TRUE;
-            }
             if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_LISTBOX) {
                 draw_list_item((const DRAWITEMSTRUCT *)lp);
-                return TRUE;
-            }
-            if (((DRAWITEMSTRUCT *)lp)->CtlID == IDC_ACCOUNT_LIST) {
-                draw_account_item((const DRAWITEMSTRUCT *)lp);
                 return TRUE;
             }
             if (((DRAWITEMSTRUCT *)lp)->CtlType == ODT_TAB_LOCAL) {
@@ -3309,14 +2639,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_NOTIFY: {
             NMHDR *nh = (NMHDR *)lp;
-            if (nh && nh->code == (UINT)-12 && (nh->idFrom == IDC_ACCOUNT_USE ||
-                                                 nh->idFrom == IDC_ACCOUNT_REMOVE)) {
-                NMCUSTOMDRAW_LOCAL *cd = (NMCUSTOMDRAW_LOCAL *)lp;
-                if (cd->dwDrawStage == CDDS_PREPAINT_LOCAL) {
-                    cd->clrText = nh->idFrom == IDC_ACCOUNT_USE ? RGB(92, 200, 130) : RGB(225, 82, 82);
-                    return CDRF_DODEFAULT_LOCAL;
-                }
-            }
             if (nh && nh->idFrom == IDC_SETTINGS_TAB && nh->code == TCN_SELCHANGE_LOCAL &&
                 g_page == 1) {
                 int newTab = (int)SendMessageW(g_tab, TCM_GETCURSEL_LOCAL, 0, 0);
@@ -3331,9 +2653,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_COMMAND: {
             int id = LOWORD(wp);
             int code = HIWORD(wp);
-            if (id == IDC_ACCOUNT_LIST && code == LBN_DBLCLK) {
-                use_selected_account();
-            } else if (id == IDC_LIST && code == LBN_SELCHANGE) {
+            if (id == IDC_LIST && code == LBN_SELCHANGE) {
                 int sel = (int)SendMessageW(g_list, LB_GETCURSEL, 0, 0);
                 if (sel >= 0) {
                     g_selected = sel;
@@ -3377,11 +2697,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 return (LRESULT)g_editBrush;
             }
             if (ctl == g_gameLabel || ctl == g_javaLabel || ctl == g_memLabel ||
-                ctl == g_memRange || ctl == g_profileLabel || ctl == g_profileVersion ||
-                ctl == g_offlineLabel || ctl == g_msLabel || ctl == g_msStatus) {
+                ctl == g_memRange) {
                 SetTextColor(hdc, RGB(126, 130, 138));
-            } else if (ctl == g_gameValue || ctl == g_javaValue || ctl == g_memMb ||
-                       ctl == g_profileValue) {
+            } else if (ctl == g_gameValue || ctl == g_javaValue || ctl == g_memMb) {
                 SetTextColor(hdc, RGB(197, 199, 205));
             } else {
                 break;
@@ -3428,46 +2746,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 if (g_launchState != LAUNCH_IDLE) InvalidateRect(hwnd, 0, FALSE);
             }
-            return 0;
-        case WM_APP_MS_LOGIN_DONE:
-            g_msLoginRunning = 0;
-            if (g_msCodeEdit) SetWindowTextW(g_msCodeEdit, L"");
-            if (wp) {
-                WCHAR msg[256];
-                int index = -1;
-                int i;
-                for (i = 0; i < g_settings.accountCount; i++) {
-                    if (g_settings.accounts[i].type == 1 &&
-                        !wcscmp(g_settings.accounts[i].uuid, g_settings.uuid)) {
-                        index = i;
-                        break;
-                    }
-                }
-                if (index < 0 && g_settings.accountCount < MAX_ACCOUNTS) {
-                    index = g_settings.accountCount++;
-                    ZeroMemory(&g_settings.accounts[index], sizeof(AccountEntry));
-                }
-                if (index >= 0) {
-                    g_settings.activeAccount = index;
-                    commit_active_account();
-                    settings_save(&g_settings);
-                }
-                refresh_settings_statics();
-                refresh_account_list();
-                start_avatar_downloads();
-                wsprintfW(msg, L"Signed in as %s.", g_settings.username);
-                if (g_msStatus) SetWindowTextW(g_msStatus, msg);
-                if (g_offlineEdit) SetWindowTextW(g_offlineEdit, g_settings.username);
-            } else {
-                if (g_msStatus)
-                    SetWindowTextW(g_msStatus, g_msLoginError[0] ? g_msLoginError : L"Microsoft login failed.");
-            }
-            sync_page_controls();
-            InvalidateRect(hwnd, 0, FALSE);
-            return 0;
-        case WM_APP_AVATAR_READY:
-            g_avatarRunning = 0;
-            if (g_accountList) InvalidateRect(g_accountList, 0, FALSE);
             return 0;
         case WM_APP_TAB_RESET:
             if (g_tab) SendMessageW(g_tab, TCM_SETCURSEL_LOCAL, 0, 0);
@@ -3615,6 +2893,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmdline, int show) {
     si.GdiplusVersion = 1;
     if (GdiplusStartup(&g_gdiplusToken, &si, 0) != 0) return 0;
     settings_load(&g_settings);
+    settings_save(&g_settings);
     g_selected = 0;
     g_appIcon = load_app_icon(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
     g_appIconSm = load_app_icon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));

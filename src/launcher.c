@@ -165,43 +165,8 @@ const WCHAR *settings_config_path(void) {
     return g_configPath;
 }
 
-static void sanitize_username(WCHAR *name, int cap) {
-    WCHAR src[128];
-    int i, j = 0;
-    DWORD n = 128;
-    src[0] = 0;
-    if (!GetUserNameW(src, &n)) src[0] = 0;
-    for (i = 0; src[i] && j < cap - 1 && j < 16; i++) {
-        WCHAR c = src[i];
-        if ((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
-            (c >= L'0' && c <= L'9') || c == L'_') {
-            name[j++] = c;
-        }
-    }
-    name[j] = 0;
-    if (!name[0]) scopy(name, L"Player", cap);
-}
-
 const WCHAR *default_game_dir(void) { return DEFAULT_GAME_DIR; }
 const WCHAR *default_java_dir(void) { return DEFAULT_JAVA_DIR; }
-
-static void account_from_legacy(AccountEntry *a, const LauncherSettings *s) {
-    a->type = s->accountType;
-    scopy(a->name, s->username, 64);
-    scopy(a->uuid, s->uuid, 64);
-    scopy(a->accessToken, s->accessToken, 4096);
-    scopy(a->refreshToken, s->refreshToken, 4096);
-    a->expires = s->tokenExpires;
-}
-
-static void legacy_from_account(LauncherSettings *s, const AccountEntry *a) {
-    s->accountType = a->type;
-    scopy(s->username, a->name, 64);
-    scopy(s->uuid, a->uuid, 64);
-    scopy(s->accessToken, a->accessToken, 4096);
-    scopy(s->refreshToken, a->refreshToken, 4096);
-    s->tokenExpires = a->expires;
-}
 
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
@@ -214,10 +179,6 @@ void settings_defaults(LauncherSettings *s) {
     }
     scopy(s->username, L"novoline_rat", 64);
     s->memoryMB = 4096;
-    s->accountCount = 1;
-    s->activeAccount = 0;
-    s->accounts[0].type = 0;
-    scopy(s->accounts[0].name, s->username, 64);
 }
 
 static char *read_utf8_file(const WCHAR *path, int *outLen) {
@@ -273,7 +234,6 @@ void settings_load(LauncherSettings *s) {
     WCHAR *wide;
     char *buf;
     int len = 0;
-    int hasAccountData = 0;
     settings_defaults(s);
     buf = read_utf8_file(settings_config_path(), &len);
     if (!buf) return;
@@ -304,35 +264,6 @@ void settings_load(LauncherSettings *s) {
                 v = eq + 1;
                 if (!wcscmp(k, L"gameDir") && v[0]) scopy(s->gameDir, v, PATH_CAP);
                 else if (!wcscmp(k, L"javaPath") && v[0]) scopy(s->javaPath, v, PATH_CAP);
-                else if (!wcscmp(k, L"username") && v[0]) scopy(s->username, v, 64);
-                else if (!wcscmp(k, L"uuid") && v[0]) scopy(s->uuid, v, 64);
-                else if (!wcscmp(k, L"accessToken") && v[0]) scopy(s->accessToken, v, 4096);
-                else if (!wcscmp(k, L"refreshToken") && v[0]) scopy(s->refreshToken, v, 4096);
-                else if (!wcscmp(k, L"accountType")) s->accountType = _wtoi(v);
-                else if (!wcscmp(k, L"tokenExpires")) s->tokenExpires = _wtoi(v);
-                else if (!wcscmp(k, L"accountCount")) s->accountCount = _wtoi(v);
-                else if (!wcscmp(k, L"activeAccount")) s->activeAccount = _wtoi(v);
-                else if (!wcsncmp(k, L"account", 7) && k[7] >= L'0' && k[7] <= L'9') {
-                    int index = 0;
-                    WCHAR *q = k + 7;
-                    WCHAR *dot;
-                    while (*q >= L'0' && *q <= L'9') {
-                        index = index * 10 + (*q - L'0');
-                        q++;
-                    }
-                    dot = wcschr(q, L'.');
-                    if (dot && index >= 0 && index < MAX_ACCOUNTS) {
-                        AccountEntry *a = &s->accounts[index];
-                        hasAccountData = 1;
-                        dot++;
-                        if (!wcscmp(dot, L"type")) a->type = _wtoi(v);
-                        else if (!wcscmp(dot, L"name") && v[0]) scopy(a->name, v, 64);
-                        else if (!wcscmp(dot, L"uuid") && v[0]) scopy(a->uuid, v, 64);
-                        else if (!wcscmp(dot, L"accessToken") && v[0]) scopy(a->accessToken, v, 4096);
-                        else if (!wcscmp(dot, L"refreshToken") && v[0]) scopy(a->refreshToken, v, 4096);
-                        else if (!wcscmp(dot, L"expires")) a->expires = _wtoi(v);
-                    }
-                }
                 else if (!wcscmp(k, L"memoryMB")) {
                     int m = _wtoi(v);
                     if (m >= 512 && m <= 32768) s->memoryMB = m;
@@ -349,100 +280,32 @@ void settings_load(LauncherSettings *s) {
         else scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
     }
     if (s->memoryMB < 512) s->memoryMB = 4096;
-    if (!s->username[0]) scopy(s->username, L"novoline_rat", 64);
-    if (s->accountType != 1) s->accountType = 0;
-    if (!hasAccountData) {
-        s->accountCount = 1;
-        s->activeAccount = 0;
-        account_from_legacy(&s->accounts[0], s);
-    }
-    if (s->accountCount < 1) s->accountCount = 1;
-    if (s->accountCount > MAX_ACCOUNTS) s->accountCount = MAX_ACCOUNTS;
-    if (s->activeAccount < 0 || s->activeAccount >= s->accountCount) s->activeAccount = 0;
-    {
-        int i;
-        for (i = 0; i < s->accountCount; i++) {
-            if (s->accounts[i].type != 1) s->accounts[i].type = 0;
-            if (!s->accounts[i].name[0]) scopy(s->accounts[i].name, L"Player", 64);
-        }
-    }
-    legacy_from_account(s, &s->accounts[s->activeAccount]);
+    scopy(s->username, L"novoline_rat", 64);
 }
 
 void settings_save(const LauncherSettings *s) {
     WCHAR path[PATH_CAP];
-    char *game, *java, *user, *uuid, *access, *refresh;
-    char *text;
-    int cap, len;
+    char *game, *java;
+    char text[PATH_CAP * 4 + 256];
+    int len;
     DWORD written = 0;
     HANDLE h;
     if (!s) return;
-    if (s->accountCount > 0 && s->activeAccount >= 0 && s->activeAccount < s->accountCount) {
-        LauncherSettings *mutable = (LauncherSettings *)s;
-        account_from_legacy(&mutable->accounts[mutable->activeAccount], mutable);
-    }
     settings_app_dir();
     path_join(path, PATH_CAP, settings_app_dir(), L"settings.ini");
     game = wide_to_utf8_alloc(s->gameDir);
     java = wide_to_utf8_alloc(s->javaPath);
-    user = wide_to_utf8_alloc(s->username);
-    uuid = wide_to_utf8_alloc(s->uuid);
-    access = wide_to_utf8_alloc(s->accessToken);
-    refresh = wide_to_utf8_alloc(s->refreshToken);
-    if (!game || !java || !user || !uuid || !access || !refresh) {
-        free(game); free(java); free(user); free(uuid); free(access); free(refresh); return;
+    if (!game || !java) {
+        free(game); free(java); return;
     }
-    cap = (int)(strlen(game) + strlen(java) + strlen(user) + strlen(uuid) +
-                strlen(access) + strlen(refresh) + 256 + MAX_ACCOUNTS * 9000);
-    text = (char *)calloc((size_t)cap, 1);
-    if (!text) {
-        free(game); free(java); free(user); free(uuid); free(access); free(refresh); return;
-    }
-    len = 0;
-    len += sprintf(text + len, "gameDir=%s\r\n", game);
-    len += sprintf(text + len, "javaPath=%s\r\n", java);
-    len += sprintf(text + len, "username=%s\r\n", user);
-    len += sprintf(text + len, "uuid=%s\r\n", uuid);
-    len += sprintf(text + len, "accessToken=%s\r\n", access);
-    len += sprintf(text + len, "refreshToken=%s\r\n", refresh);
-    len += sprintf(text + len, "accountType=%d\r\n", s->accountType);
-    len += sprintf(text + len, "tokenExpires=%ld\r\n", (long)s->tokenExpires);
-    len += sprintf(text + len, "accountCount=%d\r\n", s->accountCount);
-    len += sprintf(text + len, "activeAccount=%d\r\n", s->activeAccount);
-    {
-        int i;
-        for (i = 0; i < s->accountCount && i < MAX_ACCOUNTS; i++) {
-            const AccountEntry *a = &s->accounts[i];
-            char *aname = wide_to_utf8_alloc(a->name);
-            char *auuid = wide_to_utf8_alloc(a->uuid);
-            char *aaccess = wide_to_utf8_alloc(a->accessToken);
-            char *arefresh = wide_to_utf8_alloc(a->refreshToken);
-            if (!aname || !auuid || !aaccess || !arefresh) {
-                free(aname); free(auuid); free(aaccess); free(arefresh);
-                continue;
-            }
-            len += sprintf(text + len, "account%d.type=%d\r\n", i, a->type);
-            len += sprintf(text + len, "account%d.name=%s\r\n", i, aname);
-            len += sprintf(text + len, "account%d.uuid=%s\r\n", i, auuid);
-            len += sprintf(text + len, "account%d.accessToken=%s\r\n", i, aaccess);
-            len += sprintf(text + len, "account%d.refreshToken=%s\r\n", i, arefresh);
-            len += sprintf(text + len, "account%d.expires=%ld\r\n", i, (long)a->expires);
-            free(aname); free(auuid); free(aaccess); free(arefresh);
-        }
-    }
-    len += sprintf(text + len, "memoryMB=%d\r\n", s->memoryMB);
+    len = sprintf(text, "gameDir=%s\r\njavaPath=%s\r\nmemoryMB=%d\r\n", game, java, s->memoryMB);
     h = CreateFileW(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h != INVALID_HANDLE_VALUE) {
         WriteFile(h, text, (DWORD)len, &written, 0);
         CloseHandle(h);
     }
-    free(text);
     free(game);
     free(java);
-    free(user);
-    free(uuid);
-    free(access);
-    free(refresh);
 }
 
 static int read_release_major(const WCHAR *dir) {
@@ -657,126 +520,6 @@ static void replace_all(WCHAR *buf, int cap, const WCHAR *key, const WCHAR *valu
         scopy(out + len, start, (int)(sizeof(out) / sizeof(WCHAR)) - len);
     }
     scopy(buf, out, cap);
-}
-
-/* ---------- MD5 for offline UUID ---------- */
-
-typedef struct Md5Ctx {
-    uint32_t state[4];
-    uint64_t count;
-    unsigned char buffer[64];
-} Md5Ctx;
-
-static uint32_t md5_rotl(uint32_t x, int c) { return (x << c) | (x >> (32 - c)); }
-
-static void md5_transform(uint32_t state[4], const unsigned char block[64]) {
-    uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
-    uint32_t x[16];
-    int i;
-    static const uint32_t K[64] = {
-        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
-        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,
-        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
-        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
-        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
-        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
-        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
-        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
-    };
-    static const int S[64] = {
-        7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
-        5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
-        4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
-        6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21
-    };
-    for (i = 0; i < 16; i++) {
-        x[i] = (uint32_t)block[i * 4] | ((uint32_t)block[i * 4 + 1] << 8) |
-               ((uint32_t)block[i * 4 + 2] << 16) | ((uint32_t)block[i * 4 + 3] << 24);
-    }
-    for (i = 0; i < 64; i++) {
-        uint32_t f, g, temp;
-        if (i < 16) { f = (b & c) | ((~b) & d); g = (uint32_t)i; }
-        else if (i < 32) { f = (d & b) | ((~d) & c); g = (uint32_t)(5 * i + 1) % 16; }
-        else if (i < 48) { f = b ^ c ^ d; g = (uint32_t)(3 * i + 5) % 16; }
-        else { f = c ^ (b | (~d)); g = (uint32_t)(7 * i) % 16; }
-        temp = d;
-        d = c;
-        c = b;
-        b = b + md5_rotl(a + f + K[i] + x[g], S[i]);
-        a = temp;
-    }
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
-}
-
-static void md5_init(Md5Ctx *ctx) {
-    ctx->state[0] = 0x67452301;
-    ctx->state[1] = 0xefcdab89;
-    ctx->state[2] = 0x98badcfe;
-    ctx->state[3] = 0x10325476;
-    ctx->count = 0;
-}
-
-static void md5_update(Md5Ctx *ctx, const unsigned char *data, size_t len) {
-    size_t i, index, part;
-    index = (size_t)(ctx->count % 64);
-    ctx->count += len;
-    part = 64 - index;
-    if (len >= part) {
-        memcpy(ctx->buffer + index, data, part);
-        md5_transform(ctx->state, ctx->buffer);
-        for (i = part; i + 63 < len; i += 64) md5_transform(ctx->state, data + i);
-        index = 0;
-    } else {
-        i = 0;
-    }
-    memcpy(ctx->buffer + index, data + i, len - i);
-}
-
-static void md5_final(Md5Ctx *ctx, unsigned char digest[16]) {
-    unsigned char bits[8];
-    size_t index, padLen;
-    uint64_t bitCount = ctx->count * 8;
-    int i;
-    for (i = 0; i < 8; i++) bits[i] = (unsigned char)(bitCount >> (8 * i));
-    index = (size_t)(ctx->count % 64);
-    padLen = (index < 56) ? (56 - index) : (120 - index);
-    {
-        unsigned char pad[64];
-        ZeroMemory(pad, sizeof(pad));
-        pad[0] = 0x80;
-        md5_update(ctx, pad, padLen);
-    }
-    md5_update(ctx, bits, 8);
-    for (i = 0; i < 4; i++) {
-        digest[i * 4] = (unsigned char)(ctx->state[i] & 0xff);
-        digest[i * 4 + 1] = (unsigned char)((ctx->state[i] >> 8) & 0xff);
-        digest[i * 4 + 2] = (unsigned char)((ctx->state[i] >> 16) & 0xff);
-        digest[i * 4 + 3] = (unsigned char)((ctx->state[i] >> 24) & 0xff);
-    }
-}
-
-static void offline_uuid(const WCHAR *username, WCHAR *out, int cap) {
-    char *user;
-    char text[256];
-    unsigned char digest[16];
-    Md5Ctx ctx;
-    user = wide_to_utf8_alloc(username && username[0] ? username : L"novoline_rat");
-    if (!user) user = (char *)"novoline_rat";
-    sprintf(text, "OfflinePlayer:%s", user);
-    md5_init(&ctx);
-    md5_update(&ctx, (const unsigned char *)text, strlen(text));
-    md5_final(&ctx, digest);
-    digest[6] = (unsigned char)((digest[6] & 0x0F) | 0x30);
-    digest[8] = (unsigned char)((digest[8] & 0x3F) | 0x80);
-    wsprintfW(out,
-        L"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5],
-        digest[6], digest[7], digest[8], digest[9], digest[10], digest[11],
-        digest[12], digest[13], digest[14], digest[15]);
-    if (user != (char *)"novoline_rat") free(user);
 }
 
 /* ---------- version plan ---------- */
@@ -1221,7 +964,7 @@ static int download_file(const WCHAR *url, const WCHAR *dest, const WCHAR *label
     path_dirname(dir);
     ensure_dir_tree(dir);
     if (status) status(label);
-    session = WinHttpOpen(L"NovolineLauncher/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    session = WinHttpOpen(L"Novoline-HTTP-Client/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
         set_download_error(error, errorCap, L"Could not initialize WinHTTP", GetLastError());
@@ -1705,390 +1448,6 @@ static void set_message(WCHAR *message, int cap, const WCHAR *text) {
     if (message && cap > 0) scopy(message, text, cap);
 }
 
-static int https_request_text(const WCHAR *url, const WCHAR *method, const WCHAR *headers,
-                              const char *body, int bodyLen, char **out, int *outLen,
-                              int *statusOut, WCHAR *error, int errorCap) {
-    HINTERNET session = 0, connect = 0, request = 0;
-    WCHAR host[256], path[2048];
-    DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-    DWORD httpStatus = 0, statusSize = sizeof(httpStatus);
-    char *result = 0;
-    int length = 0, capacity = 0, ok = 0;
-    if (out) *out = 0;
-    if (outLen) *outLen = 0;
-    if (statusOut) *statusOut = 0;
-    if (!split_https(url, host, 256, path, 2048)) {
-        if (error) scopy(error, L"Invalid HTTPS endpoint.", errorCap);
-        return 0;
-    }
-    session = WinHttpOpen(L"NovolineLauncher/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) goto cleanup;
-    WinHttpSetTimeouts(session, 10000, 10000, 30000, 60000);
-    connect = WinHttpConnect(session, host, 443, 0);
-    if (!connect) goto cleanup;
-    request = WinHttpOpenRequest(connect, method, path, 0, WINHTTP_NO_REFERER,
-                                 WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-    if (!request) goto cleanup;
-    WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
-    if (!WinHttpSendRequest(request, headers ? headers : WINHTTP_NO_ADDITIONAL_HEADERS,
-                            headers ? -1L : 0, (LPVOID)body, bodyLen, bodyLen, 0))
-        goto cleanup;
-    if (!WinHttpReceiveResponse(request, 0)) goto cleanup;
-    WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                        0, &httpStatus, &statusSize, 0);
-    if (statusOut) *statusOut = (int)httpStatus;
-    result = (char *)calloc(1, 1);
-    if (!result) goto cleanup;
-    for (;;) {
-        DWORD available = 0, got = 0;
-        char chunk[8192];
-        if (!WinHttpQueryDataAvailable(request, &available) || available == 0) break;
-        if (available > sizeof(chunk)) available = sizeof(chunk);
-        if (!WinHttpReadData(request, chunk, available, &got) || got == 0) break;
-        if (length + (int)got + 1 > capacity) {
-            int next = capacity ? capacity * 2 : 8192;
-            char *grown;
-            while (next < length + (int)got + 1) next *= 2;
-            grown = (char *)realloc(result, (size_t)next);
-            if (!grown) goto cleanup;
-            result = grown;
-            capacity = next;
-        }
-        memcpy(result + length, chunk, got);
-        length += (int)got;
-        result[length] = 0;
-    }
-    if (out) *out = result;
-    else free(result);
-    if (outLen) *outLen = length;
-    result = 0;
-    ok = 1;
-cleanup:
-    if (!ok) {
-        free(result);
-        if (error && errorCap > 0) scopy(error, L"Could not contact the Microsoft service.", errorCap);
-    }
-    if (request) WinHttpCloseHandle(request);
-    if (connect) WinHttpCloseHandle(connect);
-    if (session) WinHttpCloseHandle(session);
-    return ok;
-}
-
-static char *url_encode_utf8(const WCHAR *text) {
-    char *utf8 = wide_to_utf8_alloc(text ? text : L"");
-    char *out;
-    size_t i, n = 0;
-    if (!utf8) return 0;
-    out = (char *)malloc(strlen(utf8) * 3 + 1);
-    if (!out) { free(utf8); return 0; }
-    for (i = 0; utf8[i]; i++) {
-        unsigned char c = (unsigned char)utf8[i];
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-            out[n++] = (char)c;
-        } else {
-            sprintf(out + n, "%%%02X", c);
-            n += 3;
-        }
-    }
-    out[n] = 0;
-    free(utf8);
-    return out;
-}
-
-static void auth_error_from_body(const char *body, int status, WCHAR *error, int errorCap) {
-    Json *root;
-    const WCHAR *desc = 0;
-    root = body ? json_parse_utf8(body, (int)strlen(body)) : 0;
-    if (root) {
-        int xerr = json_get_int(root, "XErr", 0);
-        const WCHAR *message = json_get_string(root, "Message", 0);
-        desc = json_get_string(root, "error_description", 0);
-        if (!desc) desc = json_get_string(root, "error", 0);
-        if (desc && desc[0]) {
-            scopy(error, desc, errorCap);
-            json_free(root);
-            return;
-        }
-        if (xerr || (message && message[0])) {
-            if (xerr && message && message[0])
-                wsprintfW(error, L"Xbox Live error %d: %s", xerr, message);
-            else if (xerr)
-                wsprintfW(error, L"Xbox Live error %d.", xerr);
-            else
-                scopy(error, message, errorCap);
-            error[errorCap - 1] = 0;
-            json_free(root);
-            return;
-        }
-        json_free(root);
-    }
-    if (status) wsprintfW(error, L"Microsoft service returned HTTP %d.", status);
-    else scopy(error, L"Microsoft authentication failed.", errorCap);
-    error[errorCap - 1] = 0;
-}
-
-static int extract_oauth_code(const WCHAR *input, WCHAR *out, int cap) {
-    const WCHAR *p = input;
-    const WCHAR *start;
-    int n = 0;
-    if (!input || !cap) return 0;
-    while (*p == L' ' || *p == L'\t' || *p == L'\r' || *p == L'\n') p++;
-    start = wcsstr(p, L"code=");
-    if (start) p = start + 5;
-    while (*p && *p != L'&' && *p != L'#' && *p != L' ' && *p != L'\r' && *p != L'\n' && n < cap - 1) {
-        if (*p == L'%' && p[1] && p[2]) {
-            int hi = (p[1] >= L'0' && p[1] <= L'9') ? p[1] - L'0' :
-                     (p[1] >= L'a' && p[1] <= L'f') ? p[1] - L'a' + 10 :
-                     (p[1] >= L'A' && p[1] <= L'F') ? p[1] - L'A' + 10 : -1;
-            int lo = (p[2] >= L'0' && p[2] <= L'9') ? p[2] - L'0' :
-                     (p[2] >= L'a' && p[2] <= L'f') ? p[2] - L'a' + 10 :
-                     (p[2] >= L'A' && p[2] <= L'F') ? p[2] - L'A' + 10 : -1;
-            if (hi >= 0 && lo >= 0) {
-                out[n++] = (WCHAR)((hi << 4) | lo);
-                p += 3;
-                continue;
-            }
-        }
-        out[n++] = *p++;
-    }
-    out[n] = 0;
-    return n > 0;
-}
-
-static int oauth_token_request(const WCHAR *code, int refresh, WCHAR *accessOut,
-                               WCHAR *refreshOut, WCHAR *error, int errorCap) {
-    char *codeEnc = url_encode_utf8(code);
-    char *redirectEnc = url_encode_utf8(L"https://login.live.com/oauth20_desktop.srf");
-    char *scopeEnc = url_encode_utf8(L"service::user.auth.xboxlive.com::MBI_SSL");
-    char *body = 0;
-    char *response = 0;
-    int responseLen = 0, status = 0, result = 0;
-    if (!codeEnc || !redirectEnc || !scopeEnc) goto cleanup;
-    body = (char *)malloc(strlen(codeEnc) + strlen(redirectEnc) + strlen(scopeEnc) + 512);
-    if (!body) goto cleanup;
-    if (refresh) {
-        sprintf(body, "client_id=00000000402b5328&refresh_token=%s&grant_type=refresh_token&scope=%s",
-                codeEnc, scopeEnc);
-    } else {
-        sprintf(body,
-                "client_id=00000000402b5328&code=%s&grant_type=authorization_code&redirect_uri=%s&scope=%s",
-                codeEnc, redirectEnc, scopeEnc);
-    }
-    if (!https_request_text(L"https://login.live.com/oauth20_token.srf", L"POST",
-                            L"Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\nAccept-Language: en-US,en;q=0.5\r\nX-Requested-With: XMLHttpRequest\r\n",
-                            body, (int)strlen(body), &response, &responseLen, &status,
-                            error, errorCap))
-        goto cleanup;
-    if (status < 200 || status >= 300) {
-        auth_error_from_body(response, status, error, errorCap);
-        goto cleanup;
-    }
-    {
-        Json *root = json_parse_utf8(response, responseLen);
-        const WCHAR *access = root ? json_get_string(root, "access_token", 0) : 0;
-        const WCHAR *refreshNew = root ? json_get_string(root, "refresh_token", 0) : 0;
-        if (!access || !access[0]) {
-            if (root) json_free(root);
-            scopy(error, L"Microsoft did not return an access token.", errorCap);
-            goto cleanup;
-        }
-        scopy(accessOut, access, 4096);
-        scopy(refreshOut, (refreshNew && refreshNew[0]) ? refreshNew : code, 4096);
-        if (root) json_free(root);
-    }
-    result = 1;
-cleanup:
-    free(codeEnc);
-    free(redirectEnc);
-    free(scopeEnc);
-    free(body);
-    free(response);
-    return result;
-}
-
-static int msa_finish_login(const WCHAR *oauthAccess, const WCHAR *oauthRefresh,
-                            LauncherSettings *s, WCHAR *error, int errorCap) {
-    char *response = 0;
-    int responseLen = 0, status = 0, result = 0;
-    char *body = 0;
-    WCHAR xblToken[4096] = { 0 }, xstsToken[4096] = { 0 }, uhs[128] = { 0 };
-    WCHAR mcToken[4096] = { 0 };
-    int expiresIn = 86400;
-    body = (char *)malloc(16384);
-    if (!body) return 0;
-    sprintf(body,
-            "{\"Properties\":{\"AuthMethod\":\"RPS\",\"SiteName\":\"user.auth.xboxlive.com\",\"RpsTicket\":\"d=%ls\"},\"RelyingParty\":\"http://auth.xboxlive.com\",\"TokenType\":\"JWT\"}",
-            oauthAccess);
-    if (!https_request_text(L"https://user.auth.xboxlive.com/user/authenticate", L"POST",
-                            L"Content-Type: application/json\r\nAccept: application/json\r\n",
-                            body, (int)strlen(body), &response, &responseLen, &status,
-                            error, errorCap))
-        goto cleanup;
-    if (status < 200 || status >= 300) {
-        auth_error_from_body(response, status, error, errorCap);
-        goto cleanup;
-    }
-    {
-        Json *root = json_parse_utf8(response, responseLen);
-        const WCHAR *token = root ? json_get_string(root, "Token", 0) : 0;
-        if (!token || !token[0]) {
-            if (root) json_free(root);
-            scopy(error, L"Xbox Live did not return a token.", errorCap);
-            goto cleanup;
-        }
-        scopy(xblToken, token, 4096);
-        if (root) json_free(root);
-    }
-    free(response); response = 0; responseLen = 0; status = 0;
-    sprintf(body,
-            "{\"Properties\":{\"SandboxId\":\"RETAIL\",\"UserTokens\":[\"%ls\"]},\"RelyingParty\":\"rp://api.minecraftservices.com/\",\"TokenType\":\"JWT\"}",
-            xblToken);
-    if (!https_request_text(L"https://xsts.auth.xboxlive.com/xsts/authorize", L"POST",
-                            L"Content-Type: application/json\r\nAccept: application/json\r\n",
-                            body, (int)strlen(body), &response, &responseLen, &status,
-                            error, errorCap))
-        goto cleanup;
-    if (status < 200 || status >= 300) {
-        auth_error_from_body(response, status, error, errorCap);
-        goto cleanup;
-    }
-    {
-        Json *root = json_parse_utf8(response, responseLen);
-        const WCHAR *token = root ? json_get_string(root, "Token", 0) : 0;
-        const Json *claims = root ? json_get(root, "DisplayClaims") : 0;
-        const Json *xui = claims ? json_get(claims, "xui") : 0;
-        const Json *first = xui ? json_at(xui, 0) : 0;
-        const WCHAR *userHash = first ? json_get_string(first, "uhs", 0) : 0;
-        if (!token || !token[0] || !userHash || !userHash[0]) {
-            if (root) json_free(root);
-            scopy(error, L"XSTS did not return a valid token.", errorCap);
-            goto cleanup;
-        }
-        scopy(xstsToken, token, 4096);
-        scopy(uhs, userHash, 128);
-        if (root) json_free(root);
-    }
-    free(response); response = 0; responseLen = 0; status = 0;
-    sprintf(body, "{\"identityToken\":\"XBL3.0 x=%ls;%ls\"}", uhs, xstsToken);
-    if (!https_request_text(L"https://api.minecraftservices.com/authentication/login_with_xbox",
-                            L"POST", L"Content-Type: application/json\r\nAccept: application/json\r\n",
-                            body, (int)strlen(body), &response, &responseLen, &status,
-                            error, errorCap))
-        goto cleanup;
-    if (status < 200 || status >= 300) {
-        auth_error_from_body(response, status, error, errorCap);
-        goto cleanup;
-    }
-    {
-        Json *root = json_parse_utf8(response, responseLen);
-        const WCHAR *token = root ? json_get_string(root, "access_token", 0) : 0;
-        if (!token || !token[0]) {
-            if (root) json_free(root);
-            scopy(error, L"Minecraft did not return a login token.", errorCap);
-            goto cleanup;
-        }
-        scopy(mcToken, token, 4096);
-        expiresIn = root ? json_get_int(root, "expires_in", 86400) : 86400;
-        if (expiresIn < 3600) expiresIn = 3600;
-        if (root) json_free(root);
-    }
-    free(response); response = 0; responseLen = 0; status = 0;
-    {
-        WCHAR authHeader[8192];
-        wsprintfW(authHeader, L"Authorization: Bearer %ls\r\nAccept: application/json\r\n", mcToken);
-        if (!https_request_text(L"https://api.minecraftservices.com/minecraft/profile", L"GET",
-                                authHeader, 0, 0, &response, &responseLen, &status,
-                                error, errorCap))
-            goto cleanup;
-    }
-    if (status < 200 || status >= 300) {
-        if (status == 404) scopy(error, L"This Microsoft account has no Minecraft profile.", errorCap);
-        else auth_error_from_body(response, status, error, errorCap);
-        goto cleanup;
-    }
-    {
-        Json *root = json_parse_utf8(response, responseLen);
-        const WCHAR *id = root ? json_get_string(root, "id", 0) : 0;
-        const WCHAR *name = root ? json_get_string(root, "name", 0) : 0;
-        if (!id || !id[0] || !name || !name[0]) {
-            if (root) json_free(root);
-            scopy(error, L"This Microsoft account has no Minecraft profile.", errorCap);
-            goto cleanup;
-        }
-        scopy(s->uuid, id, 64);
-        scopy(s->username, name, 64);
-        scopy(s->accessToken, mcToken, 4096);
-        scopy(s->refreshToken, oauthRefresh, 4096);
-        s->accountType = 1;
-        s->tokenExpires = (long long)time(0) + expiresIn - 1200;
-        if (root) json_free(root);
-    }
-    result = 1;
-cleanup:
-    free(body);
-    free(response);
-    return result;
-}
-
-const WCHAR *msa_authorization_url(void) {
-    return L"https://login.live.com/oauth20_authorize.srf?client_id=00000000402b5328&response_type=code&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL";
-}
-
-int msa_login_with_code(const WCHAR *code, LauncherSettings *s, WCHAR *error, int errorCap) {
-    WCHAR clean[4096] = { 0 }, oauthAccess[4096] = { 0 }, oauthRefresh[4096] = { 0 };
-    if (!s || !code || !extract_oauth_code(code, clean, 4096)) {
-        if (error) scopy(error, L"Paste the authorization code or redirect URL.", errorCap);
-        return 0;
-    }
-    if (!oauth_token_request(clean, 0, oauthAccess, oauthRefresh, error, errorCap)) return 0;
-    return msa_finish_login(oauthAccess, oauthRefresh, s, error, errorCap);
-}
-
-int msa_refresh_session(LauncherSettings *s, WCHAR *error, int errorCap) {
-    WCHAR oauthAccess[4096] = { 0 }, oauthRefresh[4096] = { 0 };
-    if (!s || !s->refreshToken[0]) {
-        if (error) scopy(error, L"Microsoft session expired. Please sign in again.", errorCap);
-        return 0;
-    }
-    if (!oauth_token_request(s->refreshToken, 1, oauthAccess, oauthRefresh, error, errorCap))
-        return 0;
-    if (!oauthRefresh[0]) scopy(oauthRefresh, s->refreshToken, 4096);
-    return msa_finish_login(oauthAccess, oauthRefresh, s, error, errorCap);
-}
-
-
-int account_avatar_path(const WCHAR *uuid, WCHAR *path, int cap) {
-    WCHAR dir[PATH_CAP];
-    WCHAR name[128];
-    int i, n = 0;
-    if (!uuid || !uuid[0] || !path || cap <= 0) return 0;
-    for (i = 0; uuid[i] && n < 100; i++) {
-        WCHAR c = uuid[i];
-        if ((c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') ||
-            (c >= L'A' && c <= L'F') || c == L'-')
-            name[n++] = c;
-    }
-    name[n] = 0;
-    if (!name[0]) return 0;
-    path_join(dir, PATH_CAP, settings_app_dir(), L"avatars");
-    path_join(path, cap, dir, name);
-    sappend(path, L".png", cap);
-    return 1;
-}
-
-int account_download_avatar(const WCHAR *uuid, WCHAR *path, int cap) {
-    WCHAR url[512], error[256];
-    WCHAR dir[PATH_CAP];
-    if (!account_avatar_path(uuid, path, cap)) return 0;
-    if (file_exists(path)) return 1;
-    path_join(dir, PATH_CAP, settings_app_dir(), L"avatars");
-    ensure_dir_tree(dir);
-    wsprintfW(url, L"https://crafatar.com/avatars/%ls?size=64&overlay", uuid);
-    return download_file(url, path, L"Downloading avatar", 0, error, 256);
-}
-
 
 int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCap,
                      LaunchStatusFn status, HANDLE *processOut, DWORD *pidOut) {
@@ -2193,21 +1552,9 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
     path_join(versionDir, PATH_CAP, versionDir, versionId);
     path_join(assetsRoot, PATH_CAP, s->gameDir, L"assets");
     path_join(gameAssets, PATH_CAP, assetsRoot, L"virtual\\legacy");
-    if (s->accountType == 1) {
-        if (!s->accessToken[0] || !s->uuid[0] || s->tokenExpires <= (long long)time(0) + 120) {
-            if (!msa_refresh_session(s, message, messageCap)) {
-                free(plan);
-                return 0;
-            }
-            settings_save(s);
-        }
-        scopy(uuid, s->uuid, 64);
-        scopy(authToken, s->accessToken, 4096);
-        scopy(userType, L"msa", 16);
-    } else {
-        offline_uuid(s->username, uuid, 64);
-        scopy(userType, L"legacy", 16);
-    }
+    scopy(uuid, L"edff26ce522f38869eb23aa8eb9cc036", 64);
+    scopy(authToken, L"0", 4096);
+    scopy(userType, L"legacy", 16);
     cmdHeap = (WCHAR *)calloc(CMD_CAP, sizeof(WCHAR));
     if (!cmdHeap) { free(plan); set_message(message, messageCap, L"Out of memory."); return 0; }
     scopy(cmdHeap, L"\"", CMD_CAP);
@@ -2267,7 +1614,7 @@ int launch_minecraft(const LaunchRequest *request, WCHAR *message, int messageCa
         {
             WCHAR *header = (WCHAR *)malloc((CMD_CAP + 1024) * sizeof(WCHAR));
             if (header) {
-                scopy(header, L"Novoline Launcher Dynamic Command Launch\r\nJava: ", CMD_CAP + 1024);
+                scopy(header, L"Novoline.Rat Launcher Dynamic Command Launch\r\nJava: ", CMD_CAP + 1024);
                 sappend(header, javaExe, CMD_CAP + 1024);
                 sappend(header, L"\r\nVersion: ", CMD_CAP + 1024);
                 sappend(header, plan->version, CMD_CAP + 1024);

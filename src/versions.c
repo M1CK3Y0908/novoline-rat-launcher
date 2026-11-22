@@ -148,13 +148,124 @@ cleanup:
     return ok;
 }
 
+static int is_valid_json_value_terminator(const char *p, const char *end) {
+    while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+    if (p >= end) return 1;
+    if (*p == '}' || *p == ']') return 1;
+    if (*p == ',') {
+        p++;
+        while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+        if (p >= end) return 1;
+        if (*p == '}' || *p == ']') return 1;
+        if (*p == '"' || *p == '{' || *p == '[') return 1;
+        return 0;
+    }
+    return 0;
+}
+
+static char *sanitize_versions_json(const char *src, int srcLen, int *outLen) {
+    int cap, i = 0, j = 0, in_string = 0, is_key = 0;
+    char *dst;
+    if (!src || srcLen <= 0) return NULL;
+    cap = srcLen * 2 + 256;
+    dst = (char *)malloc(cap);
+    if (!dst) return NULL;
+
+    while (i < srcLen) {
+        if (j + 4 >= cap) {
+            int newCap = cap * 2;
+            char *newDst = (char *)realloc(dst, newCap);
+            if (!newDst) { free(dst); return NULL; }
+            dst = newDst;
+            cap = newCap;
+        }
+
+        char c = src[i];
+
+        if (!in_string) {
+            if (c == '"') {
+                int prev = i - 1;
+                in_string = 1;
+                while (prev >= 0 && (src[prev] == ' ' || src[prev] == '\t' || src[prev] == '\r' || src[prev] == '\n')) prev--;
+                if (prev >= 0 && (src[prev] == '{' || src[prev] == ',')) {
+                    is_key = 1;
+                } else {
+                    is_key = 0;
+                }
+                dst[j++] = c;
+                i++;
+                continue;
+            }
+            dst[j++] = c;
+            i++;
+            continue;
+        }
+
+        if (c == '\\') {
+            dst[j++] = c;
+            i++;
+            if (i < srcLen) {
+                dst[j++] = src[i++];
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            if (is_key) {
+                const char *p = src + i + 1;
+                const char *end = src + srcLen;
+                while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+                if (p < end && *p == ':') {
+                    in_string = 0;
+                    is_key = 0;
+                    dst[j++] = c;
+                    i++;
+                    continue;
+                }
+                dst[j++] = '\\';
+                dst[j++] = '"';
+                i++;
+                continue;
+            } else {
+                if (is_valid_json_value_terminator(src + i + 1, src + srcLen)) {
+                    in_string = 0;
+                    dst[j++] = c;
+                    i++;
+                    continue;
+                } else {
+                    dst[j++] = '\\';
+                    dst[j++] = '"';
+                    i++;
+                    continue;
+                }
+            }
+        }
+
+        dst[j++] = c;
+        i++;
+    }
+
+    dst[j] = 0;
+    if (outLen) *outLen = j;
+    return dst;
+}
+
 int versions_parse_utf8(const char *data, int length, VersionList *list) {
     Json *root;
     const Json *versions;
     int i, count;
+    char *sanitized = NULL;
+    int sanitizedLen = 0;
     if (!list || !data) return 0;
     ZeroMemory(list, sizeof(*list));
     root = json_parse_utf8(data, length);
+    if (!root) {
+        sanitized = sanitize_versions_json(data, length, &sanitizedLen);
+        if (sanitized) {
+            root = json_parse_utf8(sanitized, sanitizedLen);
+            free(sanitized);
+        }
+    }
     if (!root) {
         copy_w(list->error, 256, L"Could not parse versions.rat.");
         return 0;

@@ -10,6 +10,12 @@ diag-*
 __pycache__/
 .vs/
 
+# Local runtime and archives
+java.zip
+java/
+jre/
+runtime/
+
 # Editor
 .vscode/
 .idea/
