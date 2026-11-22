@@ -29,7 +29,6 @@
 #define NATIVE_CAP 32
 #define DEFAULT_GAME_DIR L"C:\\M1CK3Y\\novoline.rat"
 #define DEFAULT_JAVA_DIR L"C:\\M1CK3Y\\novoline.rat\\java"
-#define JAVA_ARCHIVE_URL L"https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/java.zip"
 
 typedef struct LaunchPlan {
     WCHAR version[128];
@@ -165,18 +164,96 @@ const WCHAR *settings_config_path(void) {
     return g_configPath;
 }
 
+static void get_launcher_dir(WCHAR *out, int cap) {
+    if (!out || cap <= 0) return;
+    GetModuleFileNameW(0, out, (DWORD)cap);
+    path_dirname(out);
+}
+
+static int check_has_java_exe(const WCHAR *dir, WCHAR *outExe, int cap) {
+    WCHAR test[PATH_CAP];
+    if (!dir || !dir[0]) return 0;
+    if (file_exists(dir)) {
+        if (outExe) scopy(outExe, dir, cap);
+        return 1;
+    }
+    path_join(test, PATH_CAP, dir, L"bin\\java.exe");
+    if (file_exists(test)) {
+        if (outExe) scopy(outExe, test, cap);
+        return 1;
+    }
+    return 0;
+}
+
+static WCHAR g_defaultJavaDir[PATH_CAP] = { 0 };
+
 const WCHAR *default_game_dir(void) { return DEFAULT_GAME_DIR; }
-const WCHAR *default_java_dir(void) { return DEFAULT_JAVA_DIR; }
+
+const WCHAR *default_java_dir(void) {
+    WCHAR dir[PATH_CAP], check[PATH_CAP], parent[PATH_CAP];
+
+    get_launcher_dir(dir, PATH_CAP);
+
+    /* 1. <launcher_dir>\java */
+    path_join(check, PATH_CAP, dir, L"java");
+    if (check_has_java_exe(check, 0, 0)) {
+        scopy(g_defaultJavaDir, check, PATH_CAP);
+        return g_defaultJavaDir;
+    }
+
+    /* 2. <launcher_dir>\..\java (e.g. running from dist\) */
+    scopy(parent, dir, PATH_CAP);
+    path_dirname(parent);
+    path_join(check, PATH_CAP, parent, L"java");
+    if (check_has_java_exe(check, 0, 0)) {
+        scopy(g_defaultJavaDir, check, PATH_CAP);
+        return g_defaultJavaDir;
+    }
+
+    /* 3. <launcher_dir> directly */
+    if (check_has_java_exe(dir, 0, 0)) {
+        scopy(g_defaultJavaDir, dir, PATH_CAP);
+        return g_defaultJavaDir;
+    }
+
+    /* 4. If java.zip exists in launcherDir or parent, default points to java/ */
+    path_join(check, PATH_CAP, dir, L"java.zip");
+    if (file_exists(check)) {
+        path_join(g_defaultJavaDir, PATH_CAP, dir, L"java");
+        return g_defaultJavaDir;
+    }
+    path_join(check, PATH_CAP, parent, L"java.zip");
+    if (file_exists(check)) {
+        path_join(g_defaultJavaDir, PATH_CAP, parent, L"java");
+        return g_defaultJavaDir;
+    }
+    if (file_exists(L"java.zip")) {
+        path_join(g_defaultJavaDir, PATH_CAP, dir, L"java");
+        return g_defaultJavaDir;
+    }
+
+    /* 5. C:\M1CK3Y\novoline.rat\java */
+    if (check_has_java_exe(DEFAULT_JAVA_DIR, 0, 0)) {
+        scopy(g_defaultJavaDir, DEFAULT_JAVA_DIR, PATH_CAP);
+        return g_defaultJavaDir;
+    }
+
+    /* 6. System JDK-17 */
+    if (check_has_java_exe(L"C:\\Program Files\\Java\\jdk-17", 0, 0)) {
+        scopy(g_defaultJavaDir, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
+        return g_defaultJavaDir;
+    }
+
+    /* 7. Fallback to <launcher_dir>\java */
+    path_join(g_defaultJavaDir, PATH_CAP, dir, L"java");
+    return g_defaultJavaDir;
+}
 
 void settings_defaults(LauncherSettings *s) {
     if (!s) return;
     ZeroMemory(s, sizeof(*s));
     scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) {
-        scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
-    } else {
-        scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
-    }
+    scopy(s->javaPath, default_java_dir(), PATH_CAP);
     scopy(s->username, L"novoline_rat", 64);
     s->memoryMB = 4096;
 }
@@ -275,9 +352,8 @@ void settings_load(LauncherSettings *s) {
     free(wide);
     /* Only use the built-in default when no game directory was saved. */
     if (!s->gameDir[0]) scopy(s->gameDir, DEFAULT_GAME_DIR, PATH_CAP);
-    if (!s->javaPath[0]) {
-        if (file_exists(L"C:\\Program Files\\Java\\jdk-17\\bin\\java.exe")) scopy(s->javaPath, L"C:\\Program Files\\Java\\jdk-17", PATH_CAP);
-        else scopy(s->javaPath, DEFAULT_JAVA_DIR, PATH_CAP);
+    if (!s->javaPath[0] || !check_has_java_exe(s->javaPath, 0, 0)) {
+        scopy(s->javaPath, default_java_dir(), PATH_CAP);
     }
     if (s->memoryMB < 512) s->memoryMB = 4096;
     scopy(s->username, L"novoline_rat", 64);
@@ -406,6 +482,10 @@ int detect_java(LauncherSettings *s, int requiredMajor) {
     if (!s) return 0;
     if (requiredMajor <= 0) requiredMajor = 8;
     ZeroMemory(&best, sizeof(best));
+    {
+        const WCHAR *def = default_java_dir();
+        if (def && def[0]) java_candidate_consider(&best, def, requiredMajor);
+    }
     if (s->javaPath[0] && dir_exists(s->javaPath)) {
         java_candidate_consider(&best, s->javaPath, requiredMajor);
     }
@@ -1111,61 +1191,59 @@ static void java_root_path(const LauncherSettings *s, WCHAR *root, int cap) {
         if (!_wcsicmp(name, L"bin")) path_dirname(root);
         return;
     }
-    scopy(root, s->javaPath[0] ? s->javaPath : DEFAULT_JAVA_DIR, cap);
-}
-
-static int install_java_archive(const LaunchRequest *request, const WCHAR *url, const WCHAR *name,
-                                const WCHAR *dest, int strip, WCHAR *error, int errorCap,
-                                LaunchStatusFn status) {
-    const LauncherSettings *s = &request->settings;
-    WCHAR downloads[PATH_CAP], archive[PATH_CAP], exe[PATH_CAP];
-    ensure_dir_tree(s->gameDir);
-    path_join(downloads, PATH_CAP, s->gameDir, L"downloads");
-    ensure_dir_tree(downloads);
-    path_join(archive, PATH_CAP, downloads, name);
-    if (!file_exists(archive)) {
-        if (!download_file(url, archive, L"Downloading Java runtime", status, error, errorCap))
-            return 0;
-    }
-    if (status) status(L"Extracting Java runtime...");
-    ensure_dir_tree(dest);
-    path_join(exe, PATH_CAP, dest, L"bin\\java.exe");
-    if (!run_java_extract(archive, dest, strip) || !file_exists(exe)) {
-        DeleteFileW(archive);
-        scopy(error, L"Could not extract the Java runtime archive.", errorCap);
-        return 0;
-    }
-    DeleteFileW(archive);
-    return 1;
+    scopy(root, default_java_dir(), cap);
 }
 
 static int ensure_java_runtime(const LaunchRequest *request,
                                WCHAR *error, int errorCap, LaunchStatusFn status) {
     LauncherSettings *s = (LauncherSettings *)&request->settings;
     WCHAR root[PATH_CAP], exe[PATH_CAP];
-    if (s->javaPath[0] && file_exists(s->javaPath)) {
-        /* The user picked java.exe directly. */
+    WCHAR launcherDir[PATH_CAP], archive[PATH_CAP], parent[PATH_CAP];
+    int archiveFound = 0;
+
+    /* 1. If currently configured javaPath has java.exe */
+    if (s->javaPath[0] && check_has_java_exe(s->javaPath, exe, PATH_CAP)) {
         return 1;
     }
-    if (s->javaPath[0] && dir_exists(s->javaPath)) {
-        scopy(root, s->javaPath, PATH_CAP);
-    } else {
-        scopy(root, DEFAULT_JAVA_DIR, PATH_CAP);
-    }
-    path_join(exe, PATH_CAP, root, L"bin\\java.exe");
-    if (file_exists(exe)) {
+
+    /* 2. Check if default_java_dir has java.exe */
+    scopy(root, default_java_dir(), PATH_CAP);
+    if (check_has_java_exe(root, exe, PATH_CAP)) {
         scopy(s->javaPath, root, PATH_CAP);
+        settings_save(s);
         return 1;
     }
-    if (s->javaPath[0] && wcscmp(s->javaPath, DEFAULT_JAVA_DIR)) {
-        scopy(error, L"java.exe was not found at the selected Java path.", errorCap);
-        return 0;
+
+    /* 3. Check if local java.zip archive exists in project or launcher directory */
+    get_launcher_dir(launcherDir, PATH_CAP);
+    scopy(parent, launcherDir, PATH_CAP);
+    path_dirname(parent);
+
+    path_join(archive, PATH_CAP, launcherDir, L"java.zip");
+    if (file_exists(archive)) {
+        archiveFound = 1;
+    } else {
+        path_join(archive, PATH_CAP, parent, L"java.zip");
+        if (file_exists(archive)) {
+            archiveFound = 1;
+        } else if (file_exists(L"java.zip")) {
+            scopy(archive, L"java.zip", PATH_CAP);
+            archiveFound = 1;
+        }
     }
-    if (!install_java_archive(request, JAVA_ARCHIVE_URL, L"java.zip", root, 0,
-                              error, errorCap, status))
-        return 0;
-    scopy(s->javaPath, root, PATH_CAP);
-    return 1;
+
+    if (archiveFound) {
+        if (status) status(L"Extracting Java runtime from project...");
+        ensure_dir_tree(root);
+        if (run_java_extract(archive, root, 0) && check_has_java_exe(root, exe, PATH_CAP)) {
+            scopy(s->javaPath, root, PATH_CAP);
+            settings_save(s);
+            return 1;
+        }
+    }
+
+    scopy(error, L"Java runtime was not found. Please ensure Java or java.zip is placed in the project directory, or select a Java folder in Settings.", errorCap);
+    return 0;
 }
 
 static int ensure_version_files(const LaunchRequest *request, WCHAR *versionId, int idCap,
