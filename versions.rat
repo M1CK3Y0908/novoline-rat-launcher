@@ -3,45 +3,52 @@
   "versions": [
     {
       "type": "Release",
+      "date": "112226",
+      "description": "[+]Add Black Background & White Text to Startup Splash and In-game Loading Screens\n[+]Add Smooth Hover and Pressed Animations to All ClickGUI Controls\n[+]Add Non-linear Slide-Up Open Animation & Unified Avoidance to Ingame Chat\n[+]Add Theme Background & Post-Processing (Blur/Glow) Effects to Ingame Chat\n[+]Add Hotbar Module with Fancy & Lol Styles, Animated Bars and Slot Zooming\n[+]Add Standalone ArmorHUD Module Locked to Hotbar Right (2-Line Distance)\n[+]Add Custom Scoreboard Module with Post-Processing, Custom Font & Dynamic Outline\n[+]Add Standalone Information and PotionHUD Modules with Status Icons & Theme Gradients\n[+]Add Global Font Module (Rubik 16 Default) with Centralized Client-Wide Font Control\n[+]Add LiquidBounce Regen Module to Misc Category\n[+]Add MoBends Module and ChineseKungfu First-Person Punching Animations\n[+]Add Hypixel Zoom (Fast1) Mode to Fly Module\n[+]Add "dev. M1CK3Y" Watermark to Main Menu Bottom-Right Corner\n[-]Remove All Discord RPC Code, Dependencies, Natives, and Legacy IRC Gateway\n[-]Remove Main Menu Background Switcher & Documentation Button (Locked to Purple Wave Shader)\n[-]Remove Avoidance Delays Across All HUD Elements (Instant Smooth Dodging)\n[-]Remove Legacy HUD Module Remnants & Obsolete Duration Bars from PotionHUD\n[-]Remove Redundant Flight Module (Consolidated into Fly)\n[/]Recode Base Package Namespace to client.m1ck3y.novoline & Restructure Project Architecture\n[/]Recode ClickGUI Slider Hover Logic & Prevent Animation Sticking on Track Hover\n[/]Recode ClickGUI Module Text & Background Highlighting (Smooth Color Transitions)\n[/]Fix Enchanted Item Glint Texture Covering Entire Background in Hotbar & ArmorHUD\n[/]Fix Chat Input Text Being Blurred by Post-Processing (Elevated to Topmost Render Layer)\n[/]Fix HUD Avoidance Gaps to Exactly Match 2 Line Widths Distance\n[/]Fix TargetHUD Preview Display to Single Card Only\n[/]Fix MoBends First-Person View to Retain Vanilla Player Hand Model\n[/]Optimize InventoryManager and ChestStealer Workflows (Combined Sort & Clean MultiCombo, Best-Only Stealing)\n[/]Optimize Regen Module Event Handling, Packet Dispatching, and Food/Potion Checks\n[/]Update Default Outline Setting for ArrayList and Scoreboard to "Top"\n[/]Update Default Server IP for Scoreboard to "Novoline"",
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/112226/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/112226/Novoline-rat.json"
+    },
+    {
+      "type": "Release",
       "date": "111826",
       "description": "[+]Add Outline MultiCombo to ArrayList (Top, Bottom, Left, Right)\n[+]Add Full Enclosure Perimeter Outline Style for ArrayList\n[+]Add 0% Discrete Row-by-Row Mode to ThemeColor (One Solid Color Per Row Without Gradient)\n[+]Add Independent Shadow and Glow Intensity Sliders in PostProcessing\n[-]Remove ArrayList Right Line Checkbox (Replaced by Outline MultiCombo)\n[-]Remove Background Darkening and Tint from PostProcessing Blur\n[/]Recode Glow Engine to Content-Aware Exposure Bloom (Faithful Content Color Halo, Zero White Blowout)\n[/]Recode Drop Shadow Engine to Fixed 50px Natural Gaussian Falloff with Pure Alpha Scaling\n[/]Recode ArrayList Rendering Pipeline (Batch Draw Calls & Pre-allocated Zero-Lag Cache)\n[/]Optimize ArrayList Performance (Eliminate Dropdown Frame Drops & Dynamic Allocations)\n[/]Fix ArrayList Outline Colors to Strictly Match Corresponding Row Text Colors\n[/]Fix Glow Layering Order (Sharp Crisp UI on Top, Vibrant Saturated Halo Underneath)\n[/]Update Gradient Length Scaling by 10 (Old 10% Now Corresponds to 100% / 100px Max)\n[/]Update ThemeColor Calculation (Restore Mathematical Cosine & Periodic Modulo Precision)\n[/]Update Default Theme to Double Color (#35314D Slate Purple & #C7C3E5 Pastel Lavender)",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111826/Novoline-rat.json"
     },
     {
       "type": "Release",
       "date": "111726",
       "description": "[+]Add 50px Fixed Range Drop Shadow with Natural Gaussian Falloff\n[/]Recode Shadow Intensity to Strictly Control Alpha Opacity (Preserving 50px Gradient Spread)\n[/]Optimize Drop Shadow Gradient Falloff (Zero Banding, Smooth Exponential Attenuation)",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111726/Novoline-rat.json"
     },
     {
       "type": "Release",
       "date": "111626",
       "description": "[+]Add Glow Toggle Switch to PostProcessing (Theme Color Glow vs Pure Black Shadow)\n[+]Add Tenacity-accurate 8-iteration 10-offset Dual-Kawase Bloom Scaling\n[-]Remove Background Darkening and Tint from PostProcessing Blur\n[/]Recode PostProcessing Settings (Simplified to Direct 0-100% Intensity Sliders)\n[/]Restore Native Geometry Stencil Shadows for Non-Text HUD Elements\n[/]Update Default Settings (Theme #35314D, Rubik 16 Font, 50% Black ArrayList Background)",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111626/Novoline-rat.json"
     },
     {
       "type": "Release",
       "date": "111526",
       "description": "[+]Add PostProcessing (Tenacity Dual-Kawase Blur & Bloom Pipeline)\n[+]Add ThemeColor (Single, Double, Triple, Rainbow, Astolfo)\n[+]Add Entity & TileEntity Occlusion Culling\n[+]Add Classic Mode to TargetHUD\n[+]Add Watchdog Mode to Speed (novoline-eclipse-ready)\n[+]Add LiquidBounce Packet AutoBlock to KillAura\n[+]Add Customizable Font & Size Settings for Text Modules\n[+]Add Nested Scissor Masking for ClickGUI Expand/Collapse Animations\n[+]Add Dropdown Animation for ClickGUI Combo & MultiCombo Settings\n[-]Remove Display Category (Renamed to Client)\n[-]Remove Independent Module Color Pickers (Unified via ThemeColor)\n[-]Remove Legacy Hardcoded Font Outlines in HUD (Replaced with Shadows)\n[/]Recode KillAura (RavenXD Base)\n[/]Recode Scaffold (RavenXD Mechanics with Novoline Tower)\n[/]Recode Blur & Bloom Shader Engine (Tenacity Shader Architecture)\n[/]Optimize ClickGUI Rendering (Fix Exit Flash, Slider Bleeding & Framebuffer Leaks)\n[/]Fix ClickGUI Closing Shadow Persistence & Stepped Geometry Alignment\n[/]Fix 1-Frame Lag & Synchronization for HUD Glow & Drop Shadows\n[/]Update Module Categories (Move Watermark, Notifications, ArrayList, TargetHUD to Visual)\n[/]Update Default Settings (Theme #35314D, Rubik 16 Font, ArrayList 50% Black, Desaturation Off)\n[/]Update Base to OpenNovoline (Build 111526)",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111526/Novoline-rat.json"
     },
     {
       "type": "Release",
       "date": "111426",
       "description": "[+]Add ArmorHUD\n[+]Add Infomation\n[+]Add InventoryHUD\n[+]Add ModuleList\n[+]Add PotionHUD\n[+]Add TargetList\n[+]Add Watermark\n[-]Remove HUD\n[/]Recode Killaura (OpenRaven)\n[/]Update Optifine (H8 Ultra -> I7 SRC Version)\n[/]Recode Scaffold",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-111426/Release-111426.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-111426/Release-111426.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111426/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/111426/Novoline-rat.json"
     },
     {
       "type": "Release",
       "date": "110826",
       "description": "[/]Update UID Text and Color (M1CK3Y0908, Dynamic theme color)",
-      "jar": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-110826/Release-110826.jar",
-      "json": "https://github.com/M1CK3Y0908/novoline-rat-versions/raw/refs/heads/main/versions/Release-110826/Release-110826.json"
+      "jar": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/110826/Novoline-rat.jar",
+      "json": "https://github.com/M1CK3Y0908/novoline-rat/releases/download/110826/Novoline-rat.json"
     }
   ]
 }
